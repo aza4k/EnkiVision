@@ -1,0 +1,216 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EnkiVision — Nukus Tumani Agro GIS</title>
+    <meta name="description" content="Nukus tumani ekin maydonlari uchun aqlli sug'orish tavsiya tizimi — NDVI, NDWI va GEE integratsiyasi.">
+
+    <!-- Fonts: Google Roboto -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+
+    <!-- FontAwesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+
+    <!-- Dashboard CSS -->
+    <link rel="stylesheet" href="{% static 'dashboard/css/style.css' %}">
+</head>
+<body>
+
+    <!-- ─── Fullscreen Map Background ────────────────────────── -->
+    <div id="map"></div>
+
+    <!-- ─── Floating Top Navigation ──────────────────────────── -->
+    <nav class="floating-topnav">
+        <div class="nav-brand">
+            <i class="fa-solid fa-leaf brand-icon"></i>
+            <span class="brand-text">EnkiVision <span class="region-label">Nukus Tumani</span></span>
+        </div>
+        <div class="nav-metrics">
+            <div class="metric-item">
+                <i class="fa-solid fa-layer-group"></i> Maydonlar: <strong id="totalFields">—</strong>
+            </div>
+            <div class="metric-item highlight-blue">
+                <i class="fa-solid fa-droplet"></i> Suv kerak: <strong id="fieldsNeeding">—</strong>
+            </div>
+            <div class="metric-item highlight-red">
+                <i class="fa-solid fa-triangle-exclamation"></i> Tanqidiy: <strong id="criticalAlerts">—</strong>
+            </div>
+            <div class="metric-item highlight-green">
+                <i class="fa-solid fa-satellite"></i> NDVI: <strong id="avgNDVI">—</strong>
+            </div>
+            <div class="metric-item gee-status-badge" id="geeStatusBadge" title="Google Earth Engine holati">
+                <i class="fa-solid fa-circle-notch fa-spin" id="geeStatusIcon"></i>
+                <span id="geeStatusText">GEE...</span>
+            </div>
+        </div>
+        <div class="nav-right">
+            <div class="alert-ticker" id="alertTicker">
+                <i class="fa-solid fa-bell ticker-icon"></i>
+                <span class="ticker-text" id="tickerText">Ma'lumotlar yuklanmoqda...</span>
+            </div>
+            <div class="nav-time" id="navTime"></div>
+        </div>
+    </nav>
+
+    <!-- ─── Floating Sidebar (Fields & Alerts) ────────────────── -->
+    <aside class="floating-sidebar">
+        <div class="sidebar-header">
+            <h2><i class="fa-solid fa-map-location-dot"></i> Nukus Tumani Dalalar</h2>
+            <div class="map-legend">
+                <span class="legend-item"><span class="legend-dot" style="background:#22c55e"></span>Norma</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#eab308"></span>Past</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#f97316"></span>O'rta</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#ef4444"></span>Yuqori</span>
+            </div>
+        </div>
+
+        <div class="sidebar-tabs">
+            <button class="tab-btn active" onclick="switchTab('fields')"><i class="fa-solid fa-wheat-awn"></i> Dalalar</button>
+            <button class="tab-btn" onclick="switchTab('alerts')"><i class="fa-solid fa-circle-exclamation"></i> Ogohlantirishlar</button>
+        </div>
+
+        <div class="sidebar-content" id="tab-fields">
+            <div class="search-wrap">
+                <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                <input type="text" id="fieldSearch" placeholder="Dala yoki ekin bo'yicha izlash..." class="field-search">
+            </div>
+            <div class="field-list" id="fieldList">
+                <div class="loading-placeholder"><i class="fa-solid fa-spinner fa-spin"></i> Qatlamlar yuklanmoqda...</div>
+            </div>
+        </div>
+
+        <div class="sidebar-content" id="tab-alerts" style="display: none;">
+            <div class="alert-feed" id="alertFeed">
+                <div class="loading-placeholder"><i class="fa-solid fa-spinner fa-spin"></i> Telemetriya yuklanmoqda...</div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ─── Floating Action Button (FAB) ─────────────────────── -->
+    <button id="add-field-btn" class="fab-btn" title="Dala chegarasini chizish">
+        <i class="fa-solid fa-draw-polygon"></i>
+        <span>Dala qo'shish</span>
+    </button>
+
+    <!-- ─── Field Detail Modal ──────────────────────────────── -->
+    <div class="modal-overlay" id="modalOverlay" style="display:none;">
+        <div class="modal" id="fieldModal">
+            <div class="modal-header">
+                <h2 id="modalTitle">Dala ma'lumotlari</h2>
+                <button class="modal-close" id="modalClose"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- Populated by JS -->
+            </div>
+            <div class="modal-actions">
+                <button id="refreshFieldBtn" class="action-btn btn-primary"><i class="fa-solid fa-satellite-dish"></i> GEE + Ob-havo yangilash</button>
+                <button id="deleteFieldBtn" class="action-btn btn-danger"><i class="fa-solid fa-trash-can"></i> Dala o'chirish</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Create Field Slide-out Panel ────────────────────── -->
+    <div class="create-panel" id="createPanel">
+        <div class="create-panel-header">
+            <h3><i class="fa-solid fa-vector-square"></i> Dala chegarasini sozlash</h3>
+            <button class="modal-close" id="createPanelClose"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="create-panel-body">
+            <p class="panel-subtitle"><i class="fa-solid fa-calculator"></i> Maydon maydoni avtomatik hisoblanadi. GEE dan NDVI/NDWI olinadi.</p>
+            <form id="createFieldForm">
+                <div class="form-group">
+                    <label>Dala nomi</label>
+                    <input type="text" id="newFieldName" required placeholder="masalan: Nukus-A-01">
+                </div>
+                <div class="form-group">
+                    <label>Hudud / Viloyat</label>
+                    <select id="newFieldRegion">
+                        <option value="Nukus" selected>Nukus Tumani</option>
+                        <option value="Karakalpakstan">Qoraqalpog'iston</option>
+                        <option value="Khorezm">Xorazm viloyati</option>
+                        <option value="Tashkent">Toshkent viloyati</option>
+                        <option value="Navoiy">Navoiy viloyati</option>
+                        <option value="Samarkand">Samarqand viloyati</option>
+                        <option value="Bukhara">Buxoro viloyati</option>
+                        <option value="Fergana">Farg'ona viloyati</option>
+                        <option value="Andijan">Andijon viloyati</option>
+                        <option value="Namangan">Namangan viloyati</option>
+                        <option value="Kashkadarya">Qashqadaryo viloyati</option>
+                        <option value="Surkhandarya">Surxondaryo viloyati</option>
+                        <option value="Syrdarya">Sirdaryo viloyati</option>
+                        <option value="Jizzakh">Jizzax viloyati</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Ekin turi</label>
+                    <select id="newFieldCrop">
+                        <option value="cotton">G'o'za / Paxta</option>
+                        <option value="wheat">Bug'doy</option>
+                        <option value="rice">Sholi / Guruch</option>
+                        <option value="corn">Makkajo'xori</option>
+                        <option value="vegetables">Sabzavotlar</option>
+                        <option value="other">Boshqa</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>O'sish bosqichi</label>
+                    <select id="newFieldStage">
+                        <option value="seedling">Unib chiqish / Ko'chat</option>
+                        <option value="vegetative" selected>Vegetatsiya</option>
+                        <option value="flowering">Gullash</option>
+                        <option value="ripening">Pishish</option>
+                        <option value="harvest">Yig'im-terim</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Tuproq turi</label>
+                    <select id="newFieldSoil">
+                        <option value="loamy">Qumoqli</option>
+                        <option value="sandy">Qumloq</option>
+                        <option value="clay">Loyqa</option>
+                        <option value="silty">Changloq / Lyossli</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Sug'orish tizimi</label>
+                    <select id="newFieldSystem">
+                        <option value="furrow">Egatli</option>
+                        <option value="drip">Tomchilatib</option>
+                        <option value="sprinkler">Yomg'irlatib</option>
+                        <option value="flood">To'ldirish</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Tuproq namligi (%)</label>
+                    <input type="number" id="newFieldMoisture" min="0" max="100" value="45">
+                </div>
+                <button type="submit" id="createFieldSubmitBtn">
+                    <i class="fa-solid fa-satellite"></i> GIS + GEE Tahlil
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <script src="{% static 'dashboard/js/app.js' %}"></script>
+
+    <script>
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector(`.tab-btn[onclick="switchTab('${tabId}')"]`).classList.add('active');
+            document.getElementById('tab-fields').style.display = tabId === 'fields' ? 'block' : 'none';
+            document.getElementById('tab-alerts').style.display = tabId === 'alerts' ? 'block' : 'none';
+        }
+    </script>
+</body>
+</html>

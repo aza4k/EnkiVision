@@ -318,16 +318,16 @@ class CreateFieldWithAnalysisView(APIView):
         ndwi_val = gee_data['ndwi']
         gee_source = gee_data['source']
 
-        # 3. Field saqlash
+        # 3. Field saqlash (defaults used for hidden fields)
         from django.utils import timezone
         field = Field.objects.create(
             field_id=field_id,
             name=data.get('name', 'Yangi Dala'),
             area_hectares=area_ha,
             region=data.get('region', 'Nukus'),
-            crop_type=data.get('crop_type', 'cotton'),
-            crop_growth_stage=data.get('crop_growth_stage', 'vegetative'),
-            soil_type=data.get('soil_type', 'loamy'),
+            crop_type='cotton',
+            crop_growth_stage='vegetative',
+            soil_type='loamy',
             irrigation_system=data.get('irrigation_system', 'furrow'),
             latitude=lat,
             longitude=lng,
@@ -339,8 +339,9 @@ class CreateFieldWithAnalysisView(APIView):
             gee_last_updated=timezone.now(),
         )
 
-        # 4. Sensor va ob-havo saqlash
-        moisture = float(data.get('soil_moisture_percent', 50.0))
+        # 4. Sensor va ob-havo saqlash (Tuproq namligi GEE NDWI orqali hisoblanadi)
+        # NDWI (-0.3 dan 0.2 gacha) ni 0-100% gacha o'tkazamiz
+        moisture = max(5.0, min(100.0, (ndwi_val + 0.3) * 200))
         SoilSensor.objects.create(
             field=field,
             moisture_percent=moisture,
@@ -450,7 +451,17 @@ class RefreshFieldAnalysisView(APIView):
         ])
 
         latest_sensor = field.soil_sensors.first()
-        moisture = latest_sensor.moisture_percent if latest_sensor else 50.0
+        # NDWI (-0.3 dan 0.2 gacha) ni 0-100% gacha o'tkazamiz
+        moisture = max(5.0, min(100.0, (ndwi_val + 0.3) * 200))
+        if latest_sensor:
+            latest_sensor.moisture_percent = moisture
+            latest_sensor.save()
+        else:
+            SoilSensor.objects.create(
+                field=field,
+                moisture_percent=moisture,
+                temperature=weather_dict['temperature_max_c'],
+            )
 
         # 3. Engine payload
         payload = {
@@ -499,6 +510,20 @@ class GEEStatusView(APIView):
     """
     def get(self, request):
         return Response(get_gee_status())
+
+
+class GEELayersView(APIView):
+    """
+    GET /api/gee/layers/
+    Xarita uchun GEE tile qatlamlarini (NDVI, NDWI) qaytaradi.
+    """
+    def get(self, request):
+        from gee.service import get_layer_tile_urls
+        try:
+            urls = get_layer_tile_urls()
+            return Response(urls, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class DeleteFieldView(APIView):

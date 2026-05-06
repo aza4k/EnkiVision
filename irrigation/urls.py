@@ -11,6 +11,7 @@ from irrigation.views import (
     RefreshFieldAnalysisView,
     DeleteFieldView,
     GEEStatusView,
+    GEELayersView,
 )
 
 urlpatterns = [
@@ -32,6 +33,7 @@ urlpatterns = [
     # Dashboard aggregated data
     path('dashboard/', DashboardDataView.as_view(), name='dashboard-data'),
 
-    # GEE Status
+    # GEE Status and Layers
     path('gee/status/', GEEStatusView.as_view(), name='gee-status'),
+    path('gee/layers/', GEELayersView.as_view(), name='gee-layers'),
 ]

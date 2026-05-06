@@ -36,7 +36,13 @@ def _init_gee():
 
         else:
             # 2-usul: Application Default Credentials (gcloud auth)
-            ee.Initialize()
+            # Yangi ee versiyalarida project ko'rsatilishi shart
+            project_id = os.environ.get('GEE_PROJECT')
+            if project_id:
+                ee.Initialize(project=project_id)
+            else:
+                ee.Initialize()
+            
             _GEE_AVAILABLE = True
             logger.info("GEE: Default credentials bilan ulandi.")
 
@@ -219,4 +225,38 @@ def get_gee_status() -> dict:
         'connected': available,
         'status': 'online' if available else 'offline',
         'mode': 'GEE Sentinel-2/Landsat' if available else 'Seasonal Fallback',
+    }
+
+def get_layer_tile_urls() -> dict:
+    """Xarita uchun NDVI va NDWI qatlamlarining URL manzilini qaytaradi."""
+    if not _init_gee():
+        raise RuntimeError("GEE ulanmagan")
+
+    import ee
+    today = date.today()
+    start_date = (today - timedelta(days=30)).isoformat()
+    end_date = today.isoformat()
+
+    geometry = ee.Geometry.Rectangle([59.3, 42.2, 59.9, 42.7])
+
+    collection = (
+        ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+        .filterBounds(geometry)
+        .filterDate(start_date, end_date)
+        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 30))
+        .median()
+    )
+
+    ndvi = collection.normalizedDifference(['B8', 'B4'])
+    ndwi = collection.normalizedDifference(['B3', 'B8'])
+
+    ndvi_vis = {'min': 0, 'max': 0.8, 'palette': ['white', '#e6f598', '#abdda4', '#66c2a5', '#3288bd', '#5e4fa2', '#006837', '#004000']}
+    ndwi_vis = {'min': -0.3, 'max': 0.3, 'palette': ['#d73027', '#f46d43', '#fdae61', '#fee08b', 'white', '#74add1', '#4575b4', '#313695']}
+
+    ndvi_mapid = ndvi.getMapId(ndvi_vis)
+    ndwi_mapid = ndwi.getMapId(ndwi_vis)
+
+    return {
+        'ndvi': ndvi_mapid['tile_fetcher'].url_format,
+        'ndwi': ndwi_mapid['tile_fetcher'].url_format,
     }

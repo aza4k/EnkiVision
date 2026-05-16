@@ -63,8 +63,6 @@ def _init_gee():
             logger.info("GEE: Default credentials bilan ulandi.")
 
     except Exception as exc:
-
-    except Exception as exc:
         logger.warning(f"GEE ulanmadi (fallback ishlatiladi): {exc}")
         _GEE_AVAILABLE = False
 

@@ -15,7 +15,14 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-pdf36z&mm$85v6v*y#l8!
 
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = ['*', '.railway.app', '.pythonanywhere.com']
+# Railway va PythonAnywhere uchun hostlar
+ALLOWED_HOSTS = [
+    '*',
+    '.railway.app',
+    '.pythonanywhere.com',
+    'localhost',
+    '127.0.0.1'
+]
 
 # ─── Application definition ────────────────────────────────────────
 

@@ -24,27 +24,45 @@ def _init_gee():
 
     try:
         import ee
+        import json
+        import tempfile
 
-        # 1-usul: Service Account (production)
-        key_file = os.environ.get('GEE_KEY_FILE', '')
-        service_account = os.environ.get('GEE_SERVICE_ACCOUNT', '')
-        if key_file and service_account and os.path.exists(key_file):
-            credentials = ee.ServiceAccountCredentials(service_account, key_file)
-            ee.Initialize(credentials)
+        project_id = os.environ.get('GEE_PROJECT')
+        gee_json_str = os.environ.get('GEE_SERVICE_ACCOUNT_JSON')
+
+        # 1-usul: Project ID orqali (User xohishiga ko'ra)
+        # Eslatma: Bu usul serverda ishlashi uchun Application Default Credentials 
+        # yoki Service Account JSON talab qilinishi mumkin.
+        if project_id and not gee_json_str:
+            ee.Initialize(project=project_id)
             _GEE_AVAILABLE = True
-            logger.info("GEE: Service Account bilan ulandi.")
+            logger.info(f"GEE: Project ID ({project_id}) orqali ulandi.")
 
-        else:
-            # 2-usul: Application Default Credentials (gcloud auth)
-            # Yangi ee versiyalarida project ko'rsatilishi shart
-            project_id = os.environ.get('GEE_PROJECT')
-            if project_id:
-                ee.Initialize(project=project_id)
-            else:
-                ee.Initialize()
+        # 2-usul: Service Account JSON string (Railway/Production uchun eng ishonchli usul)
+        elif gee_json_str:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                f.write(gee_json_str)
+                temp_key_path = f.name
             
+            try:
+                service_account = json.loads(gee_json_str).get('client_email')
+                ee.Initialize(
+                    credentials=ee.ServiceAccountCredentials(service_account, temp_key_path),
+                    project=project_id
+                )
+                _GEE_AVAILABLE = True
+                logger.info("GEE: Service Account JSON orqali ulandi.")
+            finally:
+                if os.path.exists(temp_key_path):
+                    os.remove(temp_key_path)
+
+        # 3-usul: Default Initialize
+        else:
+            ee.Initialize()
             _GEE_AVAILABLE = True
             logger.info("GEE: Default credentials bilan ulandi.")
+
+    except Exception as exc:
 
     except Exception as exc:
         logger.warning(f"GEE ulanmadi (fallback ishlatiladi): {exc}")

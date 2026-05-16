@@ -8,6 +8,94 @@
 (function () {
     'use strict';
 
+    // ── Translation Map ────────────────────────────────────
+    const i18n = {
+        totalFields: 'Полей',
+        fieldsNeeding: 'Нужен полив',
+        criticalAlerts: 'Критично',
+        geeOnline: 'GEE Онлайн',
+        geeFallback: 'GEE Режим ожидания',
+        loadingData: 'Загрузка данных...',
+        loadError: 'Ошибка загрузки данных. Проверьте соединение.',
+        searchPlaceholder: 'Поиск по названию или культуре...',
+        noAlerts: 'Активных уведомлений нет — все в норме',
+        attentionNeeded: 'Требуется внимание: критических уведомлений - ',
+        testMode: 'Все системы работают в штатном режиме',
+        urgency: 'Срочность',
+        mm: 'мм',
+        liters: 'литров',
+        hours: 'часов',
+        notNeeded: 'Полив не требуется',
+        sufficientMoisture: 'Влажность достаточная',
+        bestTime: 'Лучшее время',
+        vsNorm: 'от нормы',
+        satIndices: 'Спутниковые индексы',
+        imgDate: 'Дата снимка',
+        fieldCondition: 'Состояние поля',
+        soil: 'Почва',
+        yieldRisk: 'Риск урожая',
+        fieldInfo: 'Информация о поле',
+        crop: 'Культура',
+        area: 'Площадь',
+        ha: 'га',
+        system: 'Система',
+        region: 'Район',
+        aiAnalysis: 'Анализ ИИ',
+        smsFarmer: 'SMS для фермера',
+        forecast3Days: 'Прогноз на 3 дня',
+        date: 'Дата',
+        waterNeed: 'Нужда (мм)',
+        confidence: 'Точность',
+        calculationProcess: 'Процесс расчета',
+        refreshing: 'Обновление...',
+        deleting: 'Удаление...',
+        deleteConfirm: 'Вы уверены, что хотите навсегда удалить это поле? Все связанные данные будут удалены.',
+        processing: 'Обработка...',
+        noData: 'Нет данных для этого поля.'
+    };
+
+    const cropMap = {
+        'cotton': 'Хлопок',
+        'wheat': 'Пшеница',
+        'corn': 'Кукуруза',
+        'vegetables': 'Овощи',
+        'rice': 'Рис',
+        'other': 'Прочее'
+    };
+
+    const stageMap = {
+        'seedling': 'Рассада',
+        'vegetative': 'Вегетация',
+        'flowering': 'Цветение',
+        'ripening': 'Созревание',
+        'harvest': 'Урожай'
+    };
+
+    const systemMap = {
+        'drip': 'Капельный',
+        'furrow': 'Арычный',
+        'sprinkler': 'Дождевание',
+        'flood': 'Напуском'
+    };
+
+    const statusMap = {
+        'healthy': 'Здорово',
+        'moderate_stress': 'Умеренный стресс',
+        'severe_stress': 'Сильный стресс',
+        'good': 'Хорошее',
+        'needs_attention': 'Нужно внимание',
+        'critical': 'Критическое',
+        'wet': 'Влажно',
+        'moist': 'Умеренно',
+        'dry': 'Сухо',
+        'very_dry': 'Очень сухо',
+        'optimal': 'Оптимально',
+        'saturated': 'Насыщено',
+        'low': 'Низкий',
+        'medium': 'Средний',
+        'high': 'Высокий'
+    };
+
     // ── State ──────────────────────────────────────────────
     let dashboardData = null;
     let map = null;
@@ -20,14 +108,12 @@
         setInterval(updateClock, 30000);
         fetchDashboardData();
         fetchGeeStatus();
-        setInterval(fetchGeeStatus, 120000); // har 2 daqiqada
+        setInterval(fetchGeeStatus, 120000);
 
-        // Search filter
         document.getElementById('fieldSearch').addEventListener('input', (e) => {
             filterFieldList(e.target.value.toLowerCase());
         });
 
-        // Modal close
         document.getElementById('modalClose').addEventListener('click', closeModal);
         document.getElementById('modalOverlay').addEventListener('click', (e) => {
             if (e.target === e.currentTarget) closeModal();
@@ -36,16 +122,9 @@
             if (e.key === 'Escape') closeModal();
         });
 
-        // Create Panel close
         document.getElementById('createPanelClose').addEventListener('click', closeCreatePanel);
-
-        // Add field button
         document.getElementById('add-field-btn').addEventListener('click', enableDrawingMode);
-
-        // Submit new field
         document.getElementById('createFieldForm').addEventListener('submit', handleFieldCreate);
-
-        // Refresh and Delete handlers
         document.getElementById('refreshFieldBtn').addEventListener('click', handleFieldRefresh);
         document.getElementById('deleteFieldBtn').addEventListener('click', handleFieldDelete);
     });
@@ -54,7 +133,7 @@
     function updateClock() {
         const now = new Date();
         const opts = { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' };
-        document.getElementById('navTime').textContent = now.toLocaleTimeString('en-GB', opts) + ' UZT';
+        document.getElementById('navTime').textContent = now.toLocaleTimeString('ru-RU', opts) + ' UZT';
     }
 
     // ── Leaflet Map ────────────────────────────────────────
@@ -63,11 +142,7 @@
     let mapLayersControl = null;
 
     function initMap() {
-        // Nukus hududi chegarasi
-        const nukusBounds = L.latLngBounds(
-            [42.25, 59.35], // SouthWest
-            [42.65, 59.85]  // NorthEast
-        );
+        const nukusBounds = L.latLngBounds([42.25, 59.35], [42.65, 59.85]);
 
         map = L.map('map', {
             center: [42.4531, 59.6104],
@@ -79,7 +154,6 @@
             attributionControl: false,
         });
 
-        // Base Layers
         const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             maxZoom: 19,
         }).addTo(map);
@@ -88,26 +162,15 @@
             maxZoom: 19,
         }).addTo(map);
 
-        // Layer Control
-        const baseMaps = {
-            "Sun'iy yo'ldosh": satelliteLayer
-        };
-        const overlayMaps = {
-            "Chegaralar & Joy nomlari": bordersLayer
-        };
+        const baseMaps = { "Спутник": satelliteLayer };
+        const overlayMaps = { "Границы и названия": bordersLayer };
         mapLayersControl = L.control.layers(baseMaps, overlayMaps, { position: 'topleft' }).addTo(map);
 
-        // Setup Draw tool
         drawControl = new L.Control.Draw({
             draw: {
-                polyline: false,
-                circle: false,
-                rectangle: true,
-                marker: false,
-                circlemarker: false,
+                polyline: false, circle: false, rectangle: true, marker: false, circlemarker: false,
                 polygon: {
-                    allowIntersection: false,
-                    showArea: true,
+                    allowIntersection: false, showArea: true,
                     shapeOptions: { color: '#00ff88', weight: 3 }
                 }
             },
@@ -135,11 +198,11 @@
                 if (data.ndvi && data.ndwi) {
                     ndviLayer = L.tileLayer(data.ndvi, { maxZoom: 19, opacity: 0.8 });
                     ndwiLayer = L.tileLayer(data.ndwi, { maxZoom: 19, opacity: 0.8 });
-                    mapLayersControl.addOverlay(ndviLayer, "🛰️ NDVI (O'simlik qatlami)");
-                    mapLayersControl.addOverlay(ndwiLayer, "💧 NDWI (Namlik qatlami)");
+                    mapLayersControl.addOverlay(ndviLayer, "🛰️ NDVI (Растительность)");
+                    mapLayersControl.addOverlay(ndwiLayer, "💧 NDWI (Влажность)");
                 }
             })
-            .catch(err => console.log('GEE qatlamlari yuklanmadi', err));
+            .catch(err => console.log('GEE layers failed', err));
     }
 
     let drawControl = null;
@@ -150,7 +213,6 @@
     function enableDrawingMode() {
         if (!drawControl) return;
         map.addControl(drawControl);
-        // Automatically start polygon tool
         new L.Draw.Polygon(map, drawControl.options.draw.polygon).enable();
     }
 
@@ -177,7 +239,6 @@
     }
 
     function renderMapMarkers(fields) {
-        // Clear existing
         fieldMarkers.forEach((m) => map.removeLayer(m));
         fieldMarkers = [];
 
@@ -186,30 +247,20 @@
             let mapFeature;
 
             if (f.polygon_coords && f.polygon_coords.length > 0) {
-                // Render as polygon
                 mapFeature = L.polygon(f.polygon_coords, {
-                    color: color,
-                    fillColor: color,
-                    fillOpacity: 0.3,
-                    weight: 3,
+                    color: color, fillColor: color, fillOpacity: 0.3, weight: 3,
                 }).addTo(map);
             } else {
-                // Fallback to circle marker
                 const radius = 12 + (f.heatmap_value || 0) * 12;
                 mapFeature = L.circleMarker([f.latitude, f.longitude], {
-                    radius: radius,
-                    fillColor: color,
-                    fillOpacity: 0.7,
-                    color: color,
-                    weight: 2,
-                    opacity: 0.9,
+                    radius: radius, fillColor: color, fillOpacity: 0.7, color: color, weight: 2, opacity: 0.9,
                 }).addTo(map);
             }
 
             mapFeature.bindTooltip(
                 `<strong>${f.field_id}</strong><br>${f.name}<br>` +
-                `${f.crop_type} · ${f.region}<br>` +
-                `Срочность: ${(f.heatmap_value * 100).toFixed(0)}%`,
+                `${cropMap[f.crop_type] || f.crop_type} · ${f.region}<br>` +
+                `${i18n.urgency}: ${(f.heatmap_value * 100).toFixed(0)}%`,
                 { className: 'custom-tooltip' }
             );
 
@@ -217,10 +268,8 @@
             fieldMarkers.push(mapFeature);
         });
 
-        // Fit map bounds
         if (fields.length > 0) {
             const group = L.featureGroup(fieldMarkers);
-            // Offset for the left sidebar so fields don't load underneath it
             map.fitBounds(group.getBounds(), { 
                 paddingTopLeft: [450, 50],
                 paddingBottomRight: [50, 50]
@@ -237,12 +286,10 @@
                 const icon  = document.getElementById('geeStatusIcon');
                 const text  = document.getElementById('geeStatusText');
                 if (!badge) return;
-                icon.className = data.connected
-                    ? 'fa-solid fa-satellite-dish'
-                    : 'fa-solid fa-circle-xmark';
-                text.textContent = data.connected ? 'GEE Online' : 'GEE Fallback';
+                icon.className = data.connected ? 'fa-solid fa-satellite-dish' : 'fa-solid fa-circle-xmark';
+                text.textContent = data.connected ? i18n.geeOnline : i18n.geeFallback;
                 badge.style.color = data.connected ? '#22c55e' : '#eab308';
-                badge.title = data.mode || 'GEE holati';
+                badge.title = data.mode || 'Статус GEE';
             })
             .catch(() => {
                 const text = document.getElementById('geeStatusText');
@@ -264,8 +311,7 @@
             })
             .catch((err) => {
                 console.error('Failed to load dashboard data:', err);
-                document.getElementById('tickerText').textContent =
-                    'Не удалось загрузить данные. Проверьте соединение с сервером.';
+                document.getElementById('tickerText').textContent = i18n.loadError;
             });
     }
 
@@ -276,7 +322,6 @@
         animateNumber('criticalAlerts', summary.critical_alerts);
         document.getElementById('avgNDVI').textContent = summary.avg_ndvi.toFixed(2);
 
-        // Color coding
         const critEl = document.getElementById('criticalAlerts');
         if (summary.critical_alerts > 0) {
             critEl.style.color = '#ef4444';
@@ -307,7 +352,6 @@
             .forEach((f) => {
                 const rec = f.recommendation;
                 const amount = rec ? rec.water_recommendation.amount_mm : 0;
-                const level = rec ? rec.recommendation_level : 'none';
                 const color = getHeatmapColor(f.heatmap_value || 0);
 
                 const item = document.createElement('div');
@@ -317,10 +361,10 @@
                     <div class="field-urgency-dot" style="background:${color};box-shadow:0 0 6px ${color}40"></div>
                     <div class="field-item-info">
                         <div class="field-item-name">${f.name}</div>
-                        <div class="field-item-meta">${f.crop_type} · ${f.region} · ${f.irrigation_system}</div>
+                        <div class="field-item-meta">${cropMap[f.crop_type] || f.crop_type} · ${f.region} · ${systemMap[f.irrigation_system] || f.irrigation_system}</div>
                     </div>
                     <div class="field-item-amount" style="color:${color}">
-                        ${amount > 0 ? amount + ' mm' : '✓ OK'}
+                        ${amount > 0 ? amount + ' ' + i18n.mm : '✓ OK'}
                     </div>
                 `;
                 item.addEventListener('click', () => openFieldModal(f));
@@ -347,20 +391,8 @@
                     allAlerts.push({ ...a, field_id: f.field_id, field_name: f.name });
                 });
             }
-            if (f.alerts) {
-                f.alerts.forEach((a) => {
-                    allAlerts.push({
-                        type: a.alert_type,
-                        severity: a.severity,
-                        message: a.message,
-                        field_id: f.field_id,
-                        field_name: f.name,
-                    });
-                });
-            }
         });
 
-        // De-dup by message
         const seen = new Set();
         allAlerts = allAlerts.filter((a) => {
             const key = a.field_id + a.message;
@@ -369,12 +401,11 @@
             return true;
         });
 
-        // Sort: critical first
         const severityOrder = { critical: 0, warning: 1, info: 2 };
         allAlerts.sort((a, b) => (severityOrder[a.severity] || 9) - (severityOrder[b.severity] || 9));
 
         if (allAlerts.length === 0) {
-            container.innerHTML = '<div class="loading-placeholder"><i class="fa-solid fa-leaf"></i> Нет активных уведомлений — все поля в норме</div>';
+            container.innerHTML = `<div class="loading-placeholder"><i class="fa-solid fa-leaf"></i> ${i18n.noAlerts}</div>`;
             return;
         }
 
@@ -382,7 +413,7 @@
             const el = document.createElement('div');
             el.className = `alert-item severity-${a.severity}`;
             el.innerHTML = `
-                <span class="alert-severity-badge">${a.severity}</span>
+                <span class="alert-severity-badge">${statusMap[a.severity] || a.severity}</span>
                 <div>
                     <div class="alert-message">${a.message}</div>
                     <div class="alert-field-tag">${a.field_id} — ${a.field_name}</div>
@@ -396,18 +427,20 @@
     function renderAlertTicker(fields) {
         let critCount = 0;
         fields.forEach((f) => {
-            if (f.alerts) critCount += f.alerts.filter((a) => a.severity === 'critical').length;
+            if (f.recommendation && f.recommendation.alerts) {
+                critCount += f.recommendation.alerts.filter((a) => a.severity === 'critical').length;
+            }
         });
 
         const ticker = document.getElementById('tickerText');
         const tickerIcon = document.querySelector('.ticker-icon');
         if (critCount > 0) {
-            ticker.textContent = `Требуется внимание: критических уведомлений - ${critCount}`;
+            ticker.textContent = `${i18n.attentionNeeded}${critCount}`;
             ticker.parentElement.style.borderColor = 'rgba(239,68,68,0.4)';
             ticker.parentElement.style.background = 'rgba(239,68,68,0.1)';
             if (tickerIcon) tickerIcon.className = 'fa-solid fa-triangle-exclamation ticker-icon';
         } else {
-            ticker.textContent = 'ТЕСТОВЫЙ РЕЖИМ: Все системы работают в штатном режиме';
+            ticker.textContent = i18n.testMode;
             ticker.parentElement.style.borderColor = 'rgba(34,197,94,0.2)';
             ticker.parentElement.style.background = 'rgba(34,197,94,0.05)';
             if (tickerIcon) tickerIcon.className = 'fa-solid fa-circle-check ticker-icon';
@@ -419,7 +452,7 @@
     function openFieldModal(field) {
         const rec = field.recommendation;
         if (!rec) {
-            alert('Bu dala uchun tavsiya ma\'lumotlari mavjud emas.');
+            alert(i18n.noData);
             return;
         }
 
@@ -435,34 +468,31 @@
         const body = document.getElementById('modalBody');
         body.innerHTML = `
             <div class="detail-grid">
-                <!-- Water Recommendation -->
                 <div class="detail-box">
-                    <div class="detail-box-title"><i class="fa-solid fa-droplet"></i> Sug'orish tavsiyasi</div>
+                    <div class="detail-box-title"><i class="fa-solid fa-droplet"></i> ${i18n.system}</div>
                     <div class="detail-box-value" style="color:${wr.irrigate_today ? 'var(--accent)' : 'var(--text-primary)'}">
-                        ${wr.irrigate_today ? wr.amount_mm + ' mm' : 'Sug\'orish shart emas'}
+                        ${wr.irrigate_today ? wr.amount_mm + ' ' + i18n.mm : i18n.notNeeded}
                     </div>
                     <div class="detail-box-sub">
                         ${wr.irrigate_today
-                            ? `Jami ${formatLiters(wr.total_liters_field)} litr · ${wr.irrigation_duration_hours} soat`
-                            : 'Dala namligi yetarli'
+                            ? `${i18n.liters}: ${formatLiters(wr.total_liters_field)} · ${wr.irrigation_duration_hours} ${i18n.hours}`
+                            : i18n.sufficientMoisture
                         }
                     </div>
                 </div>
 
-                <!-- Best Time -->
                 <div class="detail-box">
-                    <div class="detail-box-title"><i class="fa-regular fa-clock"></i> Sug'orish vaqti</div>
+                    <div class="detail-box-title"><i class="fa-regular fa-clock"></i> ${i18n.bestTime}</div>
                     <div class="detail-box-value">${wr.best_irrigation_time}</div>
                     <div class="detail-box-sub">
                         ${wr.compared_to_yesterday_percent > 0 ? '↑' : wr.compared_to_yesterday_percent < 0 ? '↓' : '→'}
-                        ${Math.abs(wr.compared_to_yesterday_percent)}% normadan
+                        ${Math.abs(wr.compared_to_yesterday_percent)}% ${i18n.vsNorm}
                     </div>
                 </div>
 
-                <!-- NDVI + NDWI Satellite -->
                 <div class="detail-box">
                     <div class="detail-box-title">
-                        <i class="fa-solid fa-satellite"></i> Yo'ldosh ko'rsatkichlari
+                        <i class="fa-solid fa-satellite"></i> ${i18n.satIndices}
                         <span class="gee-source-tag ${geeSource === 'GEE' ? 'gee-live' : 'gee-fallback'}">
                             ${geeSource === 'GEE' ? '🛰 GEE' : '📊 Fallback'}
                         </span>
@@ -474,7 +504,7 @@
                                 <div class="index-fill ndvi-fill" style="width:${Math.max(0,ndvi)*100}%"></div>
                             </div>
                             <span class="index-val">${ndvi.toFixed(3)}</span>
-                            <span class="status-badge ${getStatusClass('ndvi', fh.ndvi_status)}">${fh.ndvi_status}</span>
+                            <span class="status-badge ${getStatusClass('ndvi', fh.ndvi_status)}">${statusMap[fh.ndvi_status] || fh.ndvi_status}</span>
                         </div>
                         <div class="index-bar-row">
                             <span class="index-label">NDWI</span>
@@ -482,69 +512,63 @@
                                 <div class="index-fill ndwi-fill" style="width:${Math.max(0,(ndwi+1)/2)*100}%"></div>
                             </div>
                             <span class="index-val">${ndwi.toFixed(3)}</span>
-                            <span class="status-badge ${getNdwiClass(fh.ndwi_status || getNdwiStatusLocal(ndwi))}">${fh.ndwi_status || getNdwiStatusLocal(ndwi)}</span>
+                            <span class="status-badge ${getNdwiClass(fh.ndwi_status || getNdwiStatusLocal(ndwi))}">${statusMap[fh.ndwi_status || getNdwiStatusLocal(ndwi)]}</span>
                         </div>
                     </div>
-                    ${imgDate ? `<div class="detail-box-sub" style="margin-top:0.5rem">📅 Tasvir sanasi: ${imgDate}</div>` : ''}
+                    ${imgDate ? `<div class="detail-box-sub" style="margin-top:0.5rem">📅 ${i18n.imgDate}: ${imgDate}</div>` : ''}
                 </div>
 
-                <!-- Crop Health -->
                 <div class="detail-box">
-                    <div class="detail-box-title"><i class="fa-solid fa-leaf"></i> Dala holati</div>
+                    <div class="detail-box-title"><i class="fa-solid fa-leaf"></i> ${i18n.fieldCondition}</div>
                     <div>
-                        <span class="status-badge ${getStatusClass('crop', fh.crop_condition)}">${fh.crop_condition}</span>
+                        <span class="status-badge ${getStatusClass('crop', fh.crop_condition)}">${statusMap[fh.crop_condition] || fh.crop_condition}</span>
                     </div>
                     <div class="detail-box-sub" style="margin-top:0.5rem">
-                        Tuproq: ${fh.soil_moisture_status} · Hosil xavfi: ${fh.estimated_yield_risk}
+                        ${i18n.soil}: ${statusMap[fh.soil_moisture_status] || fh.soil_moisture_status} · ${i18n.yieldRisk}: ${statusMap[fh.estimated_yield_risk] || fh.estimated_yield_risk}
                     </div>
                 </div>
 
-                <!-- Field Info -->
                 <div class="detail-box">
-                    <div class="detail-box-title"><i class="fa-solid fa-clipboard-list"></i> Dala ma'lumotlari</div>
+                    <div class="detail-box-title"><i class="fa-solid fa-clipboard-list"></i> ${i18n.fieldInfo}</div>
                     <div class="detail-box-sub">
-                        <strong>Ekin:</strong> ${field.crop_type} (${field.crop_growth_stage})<br>
-                        <strong>Maydon:</strong> ${field.area_hectares} ga<br>
-                        <strong>Tizim:</strong> ${field.irrigation_system}<br>
-                        <strong>Hudud:</strong> ${field.region}
+                        <strong>${i18n.crop}:</strong> ${cropMap[field.crop_type] || field.crop_type} (${stageMap[field.crop_growth_stage] || field.crop_growth_stage})<br>
+                        <strong>${i18n.area}:</strong> ${field.area_hectares} ${i18n.ha}<br>
+                        <strong>${i18n.system}:</strong> ${systemMap[field.irrigation_system] || field.irrigation_system}<br>
+                        <strong>${i18n.region}:</strong> ${field.region}
                     </div>
                 </div>
 
-                <!-- AI Insight -->
                 <div class="detail-box full-width">
-                    <div class="detail-box-title"><i class="fa-solid fa-brain"></i> Sun'iy intellekt tahlili</div>
+                    <div class="detail-box-title"><i class="fa-solid fa-brain"></i> ${i18n.aiAnalysis}</div>
                     <div class="detail-box-sub">${rec.admin_insight}</div>
                 </div>
 
-                <!-- SMS -->
                 <div class="detail-box full-width">
-                    <div class="detail-box-title"><i class="fa-solid fa-mobile-screen"></i> Fermer uchun SMS</div>
+                    <div class="detail-box-title"><i class="fa-solid fa-mobile-screen"></i> ${i18n.smsFarmer}</div>
                     <div class="detail-box-sub">
-                        <strong>UZ:</strong> ${rec.farmer_sms_message.uz}<br>
-                        <strong>RU:</strong> ${rec.farmer_sms_message.ru}
+                        <strong>RU:</strong> ${rec.farmer_sms_message.ru}<br>
+                        <strong>UZ:</strong> ${rec.farmer_sms_message.uz}
                     </div>
                 </div>
 
-                <!-- Forecast -->
                 <div class="detail-box full-width">
-                    <div class="detail-box-title"><i class="fa-solid fa-chart-line"></i> 3 kunlik prognoz</div>
+                    <div class="detail-box-title"><i class="fa-solid fa-chart-line"></i> ${i18n.forecast3Days}</div>
                     <table class="forecast-table">
-                        <thead><tr><th>Sana</th><th>Suv talab (mm)</th><th>Ishonch</th></tr></thead>
+                        <thead><tr><th>${i18n.date}</th><th>${i18n.waterNeed}</th><th>${i18n.confidence}</th></tr></thead>
                         <tbody>
                             ${rec.next_irrigation_forecast.map(f => `
                                 <tr>
                                     <td>${f.date}</td>
-                                    <td>${f.predicted_need_mm} mm</td>
-                                    <td><span class="status-badge ${f.confidence === 'high' ? 'status-good' : f.confidence === 'medium' ? 'status-moderate' : 'status-severe'}">${f.confidence}</span></td>
+                                    <td>${f.predicted_need_mm} ${i18n.mm}</td>
+                                    <td><span class="status-badge ${f.confidence === 'high' ? 'status-good' : f.confidence === 'medium' ? 'status-moderate' : 'status-severe'}">${statusMap[f.confidence] || f.confidence}</span></td>
                                 </tr>
                             `).join('')}
                         </tbody>
                     </table>
                 </div>
 
-                <!-- Reasoning -->
                 <div class="detail-box full-width">
-                    <div class="detail-box-title">🔍 Hisoblash jarayoni</div>
+                    <div class="detail-box-title">🔍 ${i18n.calculationProcess}</div>
                     <div class="reasoning-trace">${rec.reasoning_trace}</div>
                 </div>
             </div>
@@ -565,7 +589,7 @@
         e.preventDefault();
         const btn = document.getElementById('createFieldSubmitBtn');
         const origText = btn.textContent;
-        btn.textContent = 'Processing...';
+        btn.textContent = i18n.processing;
         btn.disabled = true;
 
         const payload = {
@@ -589,7 +613,7 @@
             fetchDashboardData();
         })
         .catch(err => {
-            alert("Failed to create field map data.");
+            alert("Failed to create field.");
             console.error(err);
         })
         .finally(() => {
@@ -602,7 +626,7 @@
         if (!currentSelectedFieldId) return;
         const btn = document.getElementById('refreshFieldBtn');
         const origText = btn.textContent;
-        btn.textContent = 'Refreshing...';
+        btn.textContent = i18n.refreshing;
         btn.disabled = true;
 
         fetch(`/api/fields/${currentSelectedFieldId}/refresh/`, { method: 'POST' })
@@ -620,10 +644,10 @@
 
     function handleFieldDelete() {
         if (!currentSelectedFieldId) return;
-        if (!confirm("Are you sure you want to delete this field permanently? This will remove all associated weather, sensor, and recommendation data.")) return;
+        if (!confirm(i18n.deleteConfirm)) return;
 
         const btn = document.getElementById('deleteFieldBtn');
-        btn.textContent = 'Deleting...';
+        btn.textContent = i18n.deleting;
         btn.disabled = true;
 
         fetch(`/api/fields/${currentSelectedFieldId}/delete/`, { method: 'DELETE' })
@@ -633,7 +657,7 @@
         })
         .catch(err => alert("Failed to delete field."))
         .finally(() => {
-            btn.textContent = '🗑️ Delete';
+            btn.textContent = '🗑️ Удалить';
             btn.disabled = false;
         });
     }

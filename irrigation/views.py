@@ -325,7 +325,7 @@ class CreateFieldWithAnalysisView(APIView):
             name=data.get('name', 'Yangi Dala'),
             area_hectares=area_ha,
             region=data.get('region', 'Nukus'),
-            crop_type='cotton',
+            crop_type=data.get('crop_type', 'cotton'),
             crop_growth_stage='vegetative',
             soil_type='loamy',
             irrigation_system=data.get('irrigation_system', 'furrow'),
@@ -419,14 +419,11 @@ class RefreshFieldAnalysisView(APIView):
 
         # 1. Ob-havo yangilash
         weather_dict = fetch_real_weather(field.latitude, field.longitude)
-        wd, _ = WeatherData.objects.get_or_create(field=field, date=date.today())
-        wd.temperature_max_c = weather_dict['temperature_max_c']
-        wd.temperature_min_c = weather_dict['temperature_min_c']
-        wd.humidity_percent = weather_dict['humidity_percent']
-        wd.wind_speed_kmh = weather_dict['wind_speed_kmh']
-        wd.rainfall_mm = weather_dict['rainfall_mm']
-        wd.forecast_rain_3days_mm = weather_dict['forecast_rain_3days_mm']
-        wd.save()
+        WeatherData.objects.update_or_create(
+            field=field, 
+            date=date.today(),
+            defaults=weather_dict
+        )
 
         # 2. GEE: NDVI + NDWI yangilash
         gee_data = get_satellite_indices(

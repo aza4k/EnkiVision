@@ -501,6 +501,7 @@ class IrrigationEngine:
             'heatmap_value': heatmap,
             'next_irrigation_forecast': forecast,
             'reasoning_trace': ', '.join(reasoning_parts),
+            'weather': weather,
         }
 
     def process_batch(self, fields_payload: list) -> dict:

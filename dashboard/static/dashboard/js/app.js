@@ -150,9 +150,11 @@
             minZoom: 10,
             maxBounds: nukusBounds,
             maxBoundsViscosity: 1.0,
-            zoomControl: true,
+            zoomControl: false,
             attributionControl: false,
         });
+
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
 
         const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             maxZoom: 19,
@@ -164,9 +166,10 @@
 
         const baseMaps = { "Спутник": satelliteLayer };
         const overlayMaps = { "Границы и названия": bordersLayer };
-        mapLayersControl = L.control.layers(baseMaps, overlayMaps, { position: 'topleft' }).addTo(map);
+        mapLayersControl = L.control.layers(baseMaps, overlayMaps, { position: 'bottomright' }).addTo(map);
 
         drawControl = new L.Control.Draw({
+            position: 'bottomright',
             draw: {
                 polyline: false, circle: false, rectangle: true, marker: false, circlemarker: false,
                 polygon: {
@@ -231,11 +234,11 @@
     }
 
     function getHeatmapColor(value) {
-        if (value >= 0.8) return '#dc2626';
-        if (value >= 0.6) return '#ef4444';
-        if (value >= 0.4) return '#f97316';
-        if (value >= 0.2) return '#eab308';
-        return '#22c55e';
+        if (value >= 0.8) return '#a63d33'; // Earthy Red (Critical)
+        if (value >= 0.6) return '#c26a3f'; // Deep Orange
+        if (value >= 0.4) return '#c2923f'; // Harvest Gold
+        if (value >= 0.2) return '#8aa63d'; // Olive Green
+        return '#4a7c44'; // Muted Sage (Normal)
     }
 
     function renderMapMarkers(fields) {
@@ -320,7 +323,7 @@
         animateNumber('totalFields', summary.total_fields);
         animateNumber('fieldsNeeding', summary.fields_needing_irrigation);
         animateNumber('criticalAlerts', summary.critical_alerts);
-        document.getElementById('avgNDVI').textContent = summary.avg_ndvi.toFixed(2);
+        document.getElementById('avgNDVI').textContent = (summary.avg_ndvi * 100).toFixed(0) + '%';
 
         const critEl = document.getElementById('criticalAlerts');
         if (summary.critical_alerts > 0) {
@@ -467,92 +470,111 @@
 
         const body = document.getElementById('modalBody');
         body.innerHTML = `
-            <div class="detail-grid">
-                <div class="detail-box">
-                    <div class="detail-box-title"><i class="fa-solid fa-droplet"></i> ${i18n.system}</div>
-                    <div class="detail-box-value" style="color:${wr.irrigate_today ? 'var(--accent)' : 'var(--text-primary)'}">
-                        ${wr.irrigate_today ? wr.amount_mm + ' ' + i18n.mm : i18n.notNeeded}
-                    </div>
-                    <div class="detail-box-sub">
-                        ${wr.irrigate_today
-                            ? `${i18n.liters}: ${formatLiters(wr.total_liters_field)} · ${wr.irrigation_duration_hours} ${i18n.hours}`
-                            : i18n.sufficientMoisture
-                        }
-                    </div>
-                </div>
-
-                <div class="detail-box">
-                    <div class="detail-box-title"><i class="fa-regular fa-clock"></i> ${i18n.bestTime}</div>
-                    <div class="detail-box-value">${wr.best_irrigation_time}</div>
-                    <div class="detail-box-sub">
-                        ${wr.compared_to_yesterday_percent > 0 ? '↑' : wr.compared_to_yesterday_percent < 0 ? '↓' : '→'}
-                        ${Math.abs(wr.compared_to_yesterday_percent)}% ${i18n.vsNorm}
-                    </div>
-                </div>
-
-                <div class="detail-box">
-                    <div class="detail-box-title">
-                        <i class="fa-solid fa-satellite"></i> ${i18n.satIndices}
-                        <span class="gee-source-tag ${geeSource === 'GEE' ? 'gee-live' : 'gee-fallback'}">
-                            ${geeSource === 'GEE' ? '🛰 GEE' : '📊 Fallback'}
-                        </span>
-                    </div>
-                    <div class="ndvi-ndwi-bars">
-                        <div class="index-bar-row">
-                            <span class="index-label">NDVI</span>
-                            <div class="index-track">
-                                <div class="index-fill ndvi-fill" style="width:${Math.max(0,ndvi)*100}%"></div>
+            <div class="modal-grid">
+                
+                <!-- Section 1: Irrigation Recommendation -->
+                <div class="modal-section irrigation-card" style="grid-column: span 2;">
+                    <div class="modal-section-title"><i class="fa-solid fa-droplet"></i> ${i18n.system} (Рекомендация)</div>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div class="irrigation-amount">
+                                ${wr.irrigate_today ? wr.amount_mm + ' ' + i18n.mm : i18n.notNeeded}
                             </div>
-                            <span class="index-val">${ndvi.toFixed(3)}</span>
-                            <span class="status-badge ${getStatusClass('ndvi', fh.ndvi_status)}">${statusMap[fh.ndvi_status] || fh.ndvi_status}</span>
+                            <div class="detail-box-sub">
+                                ${wr.irrigate_today
+                                    ? `Лучшее время: ${wr.best_irrigation_time}`
+                                    : i18n.sufficientMoisture
+                                }
+                            </div>
                         </div>
-                        <div class="index-bar-row">
-                            <span class="index-label">NDWI</span>
-                            <div class="index-track">
-                                <div class="index-fill ndwi-fill" style="width:${Math.max(0,(ndwi+1)/2)*100}%"></div>
-                            </div>
-                            <span class="index-val">${ndwi.toFixed(3)}</span>
-                            <span class="status-badge ${getNdwiClass(fh.ndwi_status || getNdwiStatusLocal(ndwi))}">${statusMap[fh.ndwi_status || getNdwiStatusLocal(ndwi)]}</span>
+                        <div style="text-align: right;">
+                            <div class="data-label">${i18n.liters}</div>
+                            <div class="data-value" style="font-size: 1.4rem;">${formatLiters(wr.total_liters_field)}</div>
+                            <div class="data-label" style="margin-top: 8px;">${i18n.hours}</div>
+                            <div class="data-value">${wr.irrigation_duration_hours} h</div>
                         </div>
                     </div>
-                    ${imgDate ? `<div class="detail-box-sub" style="margin-top:0.5rem">📅 ${i18n.imgDate}: ${imgDate}</div>` : ''}
                 </div>
 
-                <div class="detail-box">
-                    <div class="detail-box-title"><i class="fa-solid fa-leaf"></i> ${i18n.fieldCondition}</div>
-                    <div>
+                <!-- Section 2: Field Info & Status -->
+                <div class="modal-section">
+                    <div class="modal-section-title"><i class="fa-solid fa-wheat-awn"></i> ${i18n.fieldInfo}</div>
+                    <div class="data-row">
+                        <span class="data-label">${i18n.crop}</span>
+                        <span class="data-value">${cropMap[field.crop_type] || field.crop_type} <span style="color: var(--text-dim); font-weight: 500;">(${stageMap[field.crop_growth_stage] || field.crop_growth_stage})</span></span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-label">${i18n.fieldCondition}</span>
                         <span class="status-badge ${getStatusClass('crop', fh.crop_condition)}">${statusMap[fh.crop_condition] || fh.crop_condition}</span>
                     </div>
-                    <div class="detail-box-sub" style="margin-top:0.5rem">
-                        ${i18n.soil}: ${statusMap[fh.soil_moisture_status] || fh.soil_moisture_status} · ${i18n.yieldRisk}: ${statusMap[fh.estimated_yield_risk] || fh.estimated_yield_risk}
+                    <div class="data-row">
+                        <span class="data-label">${i18n.soil}</span>
+                        <span class="data-value">${statusMap[fh.soil_moisture_status] || fh.soil_moisture_status}</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-label">${i18n.area}</span>
+                        <span class="data-value">${field.area_hectares} ${i18n.ha}</span>
                     </div>
                 </div>
 
-                <div class="detail-box">
-                    <div class="detail-box-title"><i class="fa-solid fa-clipboard-list"></i> ${i18n.fieldInfo}</div>
-                    <div class="detail-box-sub">
-                        <strong>${i18n.crop}:</strong> ${cropMap[field.crop_type] || field.crop_type} (${stageMap[field.crop_growth_stage] || field.crop_growth_stage})<br>
-                        <strong>${i18n.area}:</strong> ${field.area_hectares} ${i18n.ha}<br>
-                        <strong>${i18n.system}:</strong> ${systemMap[field.irrigation_system] || field.irrigation_system}<br>
-                        <strong>${i18n.region}:</strong> ${field.region}
+                <!-- Section 3: Satellite Monitoring -->
+                <div class="modal-section">
+                    <div class="modal-section-title">
+                        <i class="fa-solid fa-satellite"></i> ${i18n.satIndices}
+                        <span class="gee-badge ${geeSource === 'GEE' ? 'gee-live' : 'gee-fallback'}" style="margin-left: auto;">
+                            ${geeSource === 'GEE' ? 'GEE Live' : 'Fallback'}
+                        </span>
+                    </div>
+                    <div class="index-bar-row">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span class="index-label">NDVI (Вегетация)</span>
+                            <span class="index-val">${(ndvi * 100).toFixed(0)}%</span>
+                        </div>
+                        <div class="index-track">
+                            <div class="index-fill ndvi-fill" style="width:${Math.max(0,ndvi)*100}%"></div>
+                        </div>
+                    </div>
+                    <div class="index-bar-row">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span class="index-label">NDWI (Влажность)</span>
+                            <span class="index-val">${(ndwi * 100).toFixed(0)}%</span>
+                        </div>
+                        <div class="index-track">
+                            <div class="index-fill ndwi-fill" style="width:${Math.max(0,(ndwi+1)/2)*100}%"></div>
+                        </div>
+                    </div>
+                    <div class="data-row" style="margin-top: 10px; border-bottom: none;">
+                        <span class="data-label">${i18n.imgDate}</span>
+                        <span class="data-value" style="font-size: 0.9rem;">${imgDate || 'N/A'}</span>
                     </div>
                 </div>
 
-                <div class="detail-box full-width">
-                    <div class="detail-box-title"><i class="fa-solid fa-brain"></i> ${i18n.aiAnalysis}</div>
-                    <div class="detail-box-sub">${rec.admin_insight}</div>
-                </div>
-
-                <div class="detail-box full-width">
-                    <div class="detail-box-title"><i class="fa-solid fa-mobile-screen"></i> ${i18n.smsFarmer}</div>
-                    <div class="detail-box-sub">
-                        <strong>RU:</strong> ${rec.farmer_sms_message.ru}<br>
-                        <strong>UZ:</strong> ${rec.farmer_sms_message.uz}
+                <!-- Section 4: Local Weather -->
+                <div class="modal-section" style="grid-column: span 2; background: #fcfdfb;">
+                    <div class="modal-section-title" style="color: var(--brand-info); border-color: rgba(61, 110, 142, 0.2);"><i class="fa-solid fa-cloud-sun-rain"></i> Локальная погода</div>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; text-align: center;">
+                        <div>
+                            <div class="data-label">Макс. Темп.</div>
+                            <div class="data-value" style="font-size: 1.4rem;">${rec.weather ? rec.weather.temperature_max_c + '°C' : 'N/A'}</div>
+                        </div>
+                        <div>
+                            <div class="data-label">Осадки</div>
+                            <div class="data-value" style="font-size: 1.4rem; color: var(--brand-info);">${rec.weather ? rec.weather.rainfall_mm + ' мм' : '0 мм'}</div>
+                        </div>
+                        <div>
+                            <div class="data-label">Влажность</div>
+                            <div class="data-value" style="font-size: 1.4rem;">${rec.weather ? rec.weather.humidity_percent + '%' : 'N/A'}</div>
+                        </div>
+                        <div>
+                            <div class="data-label">Ветер</div>
+                            <div class="data-value" style="font-size: 1.4rem;">${rec.weather ? rec.weather.wind_speed_kmh + ' км/ч' : 'N/A'}</div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="detail-box full-width">
-                    <div class="detail-box-title"><i class="fa-solid fa-chart-line"></i> ${i18n.forecast3Days}</div>
+                <!-- Section 5: Forecast Table -->
+                <div class="modal-section" style="grid-column: span 2;">
+                    <div class="modal-section-title"><i class="fa-solid fa-chart-line"></i> ${i18n.forecast3Days}</div>
                     <table class="forecast-table">
                         <thead><tr><th>${i18n.date}</th><th>${i18n.waterNeed}</th><th>${i18n.confidence}</th></tr></thead>
                         <tbody>
@@ -567,10 +589,6 @@
                     </table>
                 </div>
 
-                <div class="detail-box full-width">
-                    <div class="detail-box-title">🔍 ${i18n.calculationProcess}</div>
-                    <div class="reasoning-trace">${rec.reasoning_trace}</div>
-                </div>
             </div>
         `;
 
@@ -594,6 +612,7 @@
 
         const payload = {
             name: document.getElementById('newFieldName').value,
+            crop_type: document.getElementById('newFieldCrop').value,
             irrigation_system: document.getElementById('newFieldSystem').value,
             region: document.getElementById('newFieldRegion').value,
             polygon_coords: currentDrawingCoords

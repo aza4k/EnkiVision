@@ -90,6 +90,21 @@ em, i, span, p, div, button, strong {
     align-items: center;
     gap: 14px;
 }
+.mobile-toggle-btn {
+    display: none; /* Hidden by default */
+    background: var(--bg-card-hover);
+    border: 1px solid var(--bg-surface);
+    color: var(--brand-primary);
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    transition: all 0.2s;
+}
+.mobile-toggle-btn:hover { background: var(--bg-active); }
 .brand-icon { font-size: 2rem; color: var(--brand-primary); }
 .brand-text { font-size: 1.4rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dark); }
 
@@ -338,6 +353,41 @@ em, i, span, p, div, button, strong {
 .gee-live { background: #dcfce7; color: #166534; }
 .gee-fallback { background: #fef9c3; color: #854d0e; }
 
+/* ── Modal Component Helpers ───────────────────────────── */
+.modal-info-flex {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.weather-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    text-align: center;
+}
+
+@media (max-width: 768px) {
+    .modal-info-flex {
+        flex-direction: column;
+        align-items: flex-start;
+        text-align: left;
+    }
+    .modal-info-flex > div:last-child {
+        text-align: left !important;
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        border-top: 1px solid var(--bg-surface);
+        padding-top: 10px;
+    }
+    .weather-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+    }
+}
+
 /* ── Visual Gauges (NDVI/NDWI) ──────────────────────────── */
 .index-bar-row { display: flex; flex-direction: column; gap: 8px; margin-bottom: 1.2rem; }
 .index-label { font-size: 0.9rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; }
@@ -459,4 +509,64 @@ em, i, span, p, div, button, strong {
     text-transform: uppercase;
     vertical-align: middle;
     margin-left: 0.5rem;
+}
+
+
+/* ── Responsive Design (Media Queries) ─────────────────── */
+
+/* Tablets & Small Laptops (max-width: 1024px) */
+@media (max-width: 1024px) {
+    .nav-metrics { gap: 20px; }
+    .nav-metrics .metric-item:not(.gee-status-badge) { display: none; } /* Hide some metrics */
+    .floating-sidebar { width: 380px; }
+}
+
+/* Smartphones & Tablets (max-width: 768px) */
+@media (max-width: 768px) {
+    .floating-topnav {
+        top: 10px; left: 10px; right: 10px;
+        height: 60px; padding: 0 15px;
+    }
+    .nav-brand .brand-text { font-size: 1.1rem; }
+    .nav-metrics, .nav-right { display: none; } /* Hide non-essentials */
+
+    .floating-sidebar {
+        top: 80px; left: 10px; right: 10px;
+        width: auto;
+        bottom: 10px;
+        max-height: calc(100vh - 90px);
+    }
+    .sidebar-header { padding: 1.2rem; }
+    .sidebar-header h2 { font-size: 1.1rem; }
+    .map-legend { display: none; } /* Hide legend on mobile */
+
+    .modal { width: 95%; max-height: 90vh; overflow-y: auto; }
+    .modal-grid { grid-template-columns: 1fr !important; gap: 1rem; }
+    .modal-section { padding: 1.2rem; }
+    .irrigation-amount { font-size: 1.8rem; }
+    .modal-body { padding: 1.2rem; }
+    .data-label { font-size: 0.85rem; }
+    .data-value { font-size: 0.95rem; }
+
+    .create-panel {
+        width: 100%;
+        top: 0; right: -100%; bottom: 0;
+        border-radius: 0; border-left: none;
+        padding: 1.5rem;
+    }
+    .create-panel.active { right: 0; }
+
+    .mobile-toggle-btn { display: flex; }
+    .floating-sidebar.collapsed { transform: translateX(-110%); opacity: 0; pointer-events: none; }
+    .floating-sidebar { transition: transform 0.3s ease, opacity 0.3s; }
+}
+
+/* Small Phones (max-width: 480px) */
+@media (max-width: 480px) {
+    .nav-brand .brand-text span { display: none; } /* Hide region label on small phones */
+    .sidebar-tabs .tab-btn { padding: 1rem; font-size: 0.85rem; }
+    .modal { width: 100%; height: 100%; max-height: 100vh; border-radius: 0; }
+    .modal-header { padding: 1rem; }
+    .modal-actions { padding: 0 1rem 1rem 1rem; flex-direction: column; }
+    .action-btn { font-size: 0.9rem; padding: 1rem; }
 }

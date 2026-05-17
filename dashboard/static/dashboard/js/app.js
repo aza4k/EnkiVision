@@ -124,6 +124,14 @@
 
         document.getElementById('createPanelClose').addEventListener('click', closeCreatePanel);
         document.getElementById('add-field-btn').addEventListener('click', enableDrawingMode);
+
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        if (sidebarToggle) {
+            sidebarToggle.addEventListener('click', () => {
+                document.querySelector('.floating-sidebar').classList.toggle('collapsed');
+            });
+        }
+
         document.getElementById('createFieldForm').addEventListener('submit', handleFieldCreate);
         document.getElementById('refreshFieldBtn').addEventListener('click', handleFieldRefresh);
         document.getElementById('deleteFieldBtn').addEventListener('click', handleFieldDelete);
@@ -215,6 +223,9 @@
 
     function enableDrawingMode() {
         if (!drawControl) return;
+        if (window.innerWidth <= 768) {
+            document.querySelector('.floating-sidebar').classList.add('collapsed');
+        }
         map.addControl(drawControl);
         new L.Draw.Polygon(map, drawControl.options.draw.polygon).enable();
     }
@@ -267,15 +278,21 @@
                 { className: 'custom-tooltip' }
             );
 
-            mapFeature.on('click', () => openFieldModal(f));
+            mapFeature.on('click', () => {
+                openFieldModal(f);
+                if (window.innerWidth <= 768) {
+                    document.querySelector('.floating-sidebar').classList.add('collapsed');
+                }
+            });
             fieldMarkers.push(mapFeature);
         });
 
         if (fields.length > 0) {
             const group = L.featureGroup(fieldMarkers);
+            const isMobile = window.innerWidth <= 768;
             map.fitBounds(group.getBounds(), { 
-                paddingTopLeft: [450, 50],
-                paddingBottomRight: [50, 50]
+                paddingTopLeft: isMobile ? [20, 20] : [450, 50],
+                paddingBottomRight: [20, 20]
             });
         }
     }
@@ -370,7 +387,12 @@
                         ${amount > 0 ? amount + ' ' + i18n.mm : '✓ OK'}
                     </div>
                 `;
-                item.addEventListener('click', () => openFieldModal(f));
+                item.addEventListener('click', () => {
+                    openFieldModal(f);
+                    if (window.innerWidth <= 768) {
+                        document.querySelector('.floating-sidebar').classList.add('collapsed');
+                    }
+                });
                 container.appendChild(item);
             });
     }
@@ -475,7 +497,7 @@
                 <!-- Section 1: Irrigation Recommendation -->
                 <div class="modal-section irrigation-card" style="grid-column: span 2;">
                     <div class="modal-section-title"><i class="fa-solid fa-droplet"></i> ${i18n.system} (Рекомендация)</div>
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="modal-info-flex">
                         <div>
                             <div class="irrigation-amount">
                                 ${wr.irrigate_today ? wr.amount_mm + ' ' + i18n.mm : i18n.notNeeded}
@@ -488,10 +510,14 @@
                             </div>
                         </div>
                         <div style="text-align: right;">
-                            <div class="data-label">${i18n.liters}</div>
-                            <div class="data-value" style="font-size: 1.4rem;">${formatLiters(wr.total_liters_field)}</div>
-                            <div class="data-label" style="margin-top: 8px;">${i18n.hours}</div>
-                            <div class="data-value">${wr.irrigation_duration_hours} h</div>
+                            <div>
+                                <div class="data-label">${i18n.liters}</div>
+                                <div class="data-value" style="font-size: 1.4rem;">${formatLiters(wr.total_liters_field)}</div>
+                            </div>
+                            <div>
+                                <div class="data-label">${i18n.hours}</div>
+                                <div class="data-value">${wr.irrigation_duration_hours} h</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -552,7 +578,7 @@
                 <!-- Section 4: Local Weather -->
                 <div class="modal-section" style="grid-column: span 2; background: #fcfdfb;">
                     <div class="modal-section-title" style="color: var(--brand-info); border-color: rgba(61, 110, 142, 0.2);"><i class="fa-solid fa-cloud-sun-rain"></i> Локальная погода</div>
-                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; text-align: center;">
+                    <div class="weather-grid">
                         <div>
                             <div class="data-label">Макс. Темп.</div>
                             <div class="data-value" style="font-size: 1.4rem;">${rec.weather ? rec.weather.temperature_max_c + '°C' : 'N/A'}</div>
@@ -575,18 +601,20 @@
                 <!-- Section 5: Forecast Table -->
                 <div class="modal-section" style="grid-column: span 2;">
                     <div class="modal-section-title"><i class="fa-solid fa-chart-line"></i> ${i18n.forecast3Days}</div>
-                    <table class="forecast-table">
-                        <thead><tr><th>${i18n.date}</th><th>${i18n.waterNeed}</th><th>${i18n.confidence}</th></tr></thead>
-                        <tbody>
-                            ${rec.next_irrigation_forecast.map(f => `
-                                <tr>
-                                    <td>${f.date}</td>
-                                    <td>${f.predicted_need_mm} ${i18n.mm}</td>
-                                    <td><span class="status-badge ${f.confidence === 'high' ? 'status-good' : f.confidence === 'medium' ? 'status-moderate' : 'status-severe'}">${statusMap[f.confidence] || f.confidence}</span></td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+                    <div style="overflow-x: auto;">
+                        <table class="forecast-table">
+                            <thead><tr><th>${i18n.date}</th><th>${i18n.waterNeed}</th><th>${i18n.confidence}</th></tr></thead>
+                            <tbody>
+                                ${rec.next_irrigation_forecast.map(f => `
+                                    <tr>
+                                        <td>${f.date}</td>
+                                        <td>${f.predicted_need_mm} ${i18n.mm}</td>
+                                        <td><span class="status-badge ${f.confidence === 'high' ? 'status-good' : f.confidence === 'medium' ? 'status-moderate' : 'status-severe'}">${statusMap[f.confidence] || f.confidence}</span></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
             </div>

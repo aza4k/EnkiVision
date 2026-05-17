@@ -322,29 +322,33 @@
         fetch('/api/dashboard/')
             .then((r) => r.json())
             .then((data) => {
+                if (!data) return;
                 dashboardData = data;
-                renderSummaryCards(data.summary);
-                renderFieldList(data.fields);
-                renderMapMarkers(data.fields);
-                renderAlertFeed(data.fields);
-                renderAlertTicker(data.fields);
+                if (data.summary) renderSummaryCards(data.summary);
+                if (data.fields) {
+                    renderFieldList(data.fields);
+                    renderMapMarkers(data.fields);
+                    renderAlertFeed(data.fields);
+                }
             })
             .catch((err) => {
                 console.error('Failed to load dashboard data:', err);
-                document.getElementById('tickerText').textContent = i18n.loadError;
             });
     }
 
     // ── Summary Cards ──────────────────────────────────────
     function renderSummaryCards(summary) {
-        animateNumber('totalFields', summary.total_fields);
-        animateNumber('fieldsNeeding', summary.fields_needing_irrigation);
-        animateNumber('criticalAlerts', summary.critical_alerts);
-        document.getElementById('avgNDVI').textContent = (summary.avg_ndvi * 100).toFixed(0) + '%';
+        if (!summary) return;
+        animateNumber('totalFields', summary.total_fields || 0);
+        animateNumber('fieldsNeeding', summary.fields_needing_irrigation || 0);
+        animateNumber('criticalAlerts', summary.critical_alerts || 0);
+        
+        const ndviVal = (summary.avg_ndvi || 0) * 100;
+        document.getElementById('avgNDVI').textContent = ndviVal.toFixed(0) + '%';
 
         const critEl = document.getElementById('criticalAlerts');
         if (summary.critical_alerts > 0) {
-            critEl.style.color = '#ef4444';
+            critEl.style.color = '#a63d33';
         }
     }
 
@@ -685,42 +689,6 @@
     }
 
     // ── Helpers ─────────────────────────────────────────────
-    function formatLiters(n) {
-        if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-        if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
-        return n;
-    }
-
-    function getStatusClass(type, value) {
-        if (type === 'ndvi') {
-            if (value === 'healthy') return 'status-healthy';
-            if (value === 'moderate_stress') return 'status-moderate';
-            return 'status-severe';
-        }
-        if (type === 'crop') {
-            if (value === 'good') return 'status-good';
-            if (value === 'needs_attention') return 'status-attention';
-            return 'status-critical';
-        }
-        return '';
-    }
-
-    function getNdwiClass(status) {
-        if (status === 'wet') return 'status-healthy';
-        if (status === 'moist') return 'status-good';
-        if (status === 'dry') return 'status-moderate';
-        return 'status-severe';
-    }
-
-    function getNdwiStatusLocal(ndwi) {
-        if (ndwi >= 0.1) return 'wet';
-        if (ndwi >= -0.1) return 'moist';
-        if (ndwi >= -0.3) return 'dry';
-        return 'very_dry';
-    }
-
-})();
-──────────────────────
     function formatLiters(n) {
         if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
         if (n >= 1000) return (n / 1000).toFixed(0) + 'K';

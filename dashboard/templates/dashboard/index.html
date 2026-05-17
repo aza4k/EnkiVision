@@ -82,10 +82,6 @@
             <div class="field-list" id="fieldList">
                 <div class="loading-placeholder"><i class="fa-solid fa-spinner fa-spin"></i> Загрузка слоев...</div>
             </div>
-            <button id="add-field-btn" class="sidebar-add-btn" title="Нарисовать границы поля">
-                <i class="fa-solid fa-draw-polygon"></i>
-                <span>Добавить поле</span>
-            </button>
         </div>
 
         <div class="sidebar-content" id="tab-alerts" style="display: none;">
@@ -93,6 +89,11 @@
                 <div class="loading-placeholder"><i class="fa-solid fa-spinner fa-spin"></i> Загрузка телеметрии...</div>
             </div>
         </div>
+
+        <button id="add-field-btn" class="sidebar-add-btn" title="Нарисовать границы поля">
+            <i class="fa-solid fa-draw-polygon"></i>
+            <span>Добавить поле</span>
+        </button>
     </aside>
 
     <!-- ─── Field Detail Modal ──────────────────────────────── -->
@@ -182,12 +183,6 @@
             const activeBtn = document.querySelector(`.tab-btn[onclick="switchTab('${tabId}')"]`);
             if (activeBtn) activeBtn.classList.add('active');
             document.getElementById('tab-fields').style.display = tabId === 'fields' ? 'block' : 'none';
-            document.getElementById('tab-alerts').style.display = tabId === 'alerts' ? 'block' : 'none';
-        }
-    </script>
-</body>
-</html>
-ById('tab-fields').style.display = tabId === 'fields' ? 'block' : 'none';
             document.getElementById('tab-alerts').style.display = tabId === 'alerts' ? 'block' : 'none';
         }
     </script>

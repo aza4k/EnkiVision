@@ -245,6 +245,7 @@ em, i, span, p, div, button, strong {
 
 /* ── Action Buttons ─────────────────────────────────────── */
 .sidebar-add-btn {
+    width: calc(100% - 2.4rem);
     margin: 0 1.2rem 1.2rem;
     padding: 1.2rem;
     background: var(--brand-primary);
@@ -261,6 +262,7 @@ em, i, span, p, div, button, strong {
     cursor: pointer;
     transition: all 0.2s;
     box-shadow: 0 4px 12px rgba(45, 90, 39, 0.2);
+    flex-shrink: 0; /* Prevent button from shrinking */
 }
 
 .sidebar-add-btn:hover {

@@ -448,31 +448,6 @@
         });
     }
 
-    // ── Alert Ticker ───────────────────────────────────────
-    function renderAlertTicker(fields) {
-        let critCount = 0;
-        fields.forEach((f) => {
-            if (f.recommendation && f.recommendation.alerts) {
-                critCount += f.recommendation.alerts.filter((a) => a.severity === 'critical').length;
-            }
-        });
-
-        const ticker = document.getElementById('tickerText');
-        const tickerIcon = document.querySelector('.ticker-icon');
-        if (critCount > 0) {
-            ticker.textContent = `${i18n.attentionNeeded}${critCount}`;
-            ticker.parentElement.style.borderColor = 'rgba(239,68,68,0.4)';
-            ticker.parentElement.style.background = 'rgba(239,68,68,0.1)';
-            if (tickerIcon) tickerIcon.className = 'fa-solid fa-triangle-exclamation ticker-icon';
-        } else {
-            ticker.textContent = i18n.testMode;
-            ticker.parentElement.style.borderColor = 'rgba(34,197,94,0.2)';
-            ticker.parentElement.style.background = 'rgba(34,197,94,0.05)';
-            if (tickerIcon) tickerIcon.className = 'fa-solid fa-circle-check ticker-icon';
-            if (tickerIcon) tickerIcon.style.color = '#22c55e';
-        }
-    }
-
     // ── Field Detail Modal ─────────────────────────────────
     function openFieldModal(field) {
         const rec = field.recommendation;
@@ -710,6 +685,42 @@
     }
 
     // ── Helpers ─────────────────────────────────────────────
+    function formatLiters(n) {
+        if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+        if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
+        return n;
+    }
+
+    function getStatusClass(type, value) {
+        if (type === 'ndvi') {
+            if (value === 'healthy') return 'status-healthy';
+            if (value === 'moderate_stress') return 'status-moderate';
+            return 'status-severe';
+        }
+        if (type === 'crop') {
+            if (value === 'good') return 'status-good';
+            if (value === 'needs_attention') return 'status-attention';
+            return 'status-critical';
+        }
+        return '';
+    }
+
+    function getNdwiClass(status) {
+        if (status === 'wet') return 'status-healthy';
+        if (status === 'moist') return 'status-good';
+        if (status === 'dry') return 'status-moderate';
+        return 'status-severe';
+    }
+
+    function getNdwiStatusLocal(ndwi) {
+        if (ndwi >= 0.1) return 'wet';
+        if (ndwi >= -0.1) return 'moist';
+        if (ndwi >= -0.3) return 'dry';
+        return 'very_dry';
+    }
+
+})();
+──────────────────────
     function formatLiters(n) {
         if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
         if (n >= 1000) return (n / 1000).toFixed(0) + 'K';

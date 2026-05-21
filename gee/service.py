@@ -152,7 +152,7 @@ def get_full_spectral_analysis(
         stats = combined.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=geometry,
-            scale=20,
+            scale=50,
             maxPixels=1e8
         ).getInfo()
 
@@ -368,12 +368,12 @@ def get_field_spectral_profile(polygon_coords: list, lat: float, lng: float) -> 
     stats = image.select(selected_bands).reduceRegion(
         reducer=ee.Reducer.mean(),
         geometry=geometry,
-        scale=20
+        scale=50
     ).getInfo()
 
     # NDVI va NDWI ni ham qo'shamiz
-    ndvi = image.normalizedDifference(['B8', 'B4']).reduceRegion(ee.Reducer.mean(), geometry, 20).getInfo().get('nd', 0)
-    ndwi = image.normalizedDifference(['B3', 'B8']).reduceRegion(ee.Reducer.mean(), geometry, 20).getInfo().get('nd', 0)
+    ndvi = image.normalizedDifference(['B8', 'B4']).reduceRegion(ee.Reducer.mean(), geometry, 50).getInfo().get('nd', 0)
+    ndwi = image.normalizedDifference(['B3', 'B8']).reduceRegion(ee.Reducer.mean(), geometry, 50).getInfo().get('nd', 0)
 
     return {
         'bands': stats,

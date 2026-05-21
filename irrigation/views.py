@@ -1,5 +1,5 @@
 from datetime import date
-
+import time
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateAPIView, ListAPIView
@@ -16,7 +16,8 @@ from irrigation.serializers import (
     AlertSerializer,
 )
 from notifications.models import Alert
-from gee.service import get_satellite_indices, get_gee_status
+from gee.service import get_satellite_indices, get_gee_status, get_field_thumbnail_url, get_field_spectral_profile, get_full_spectral_analysis
+from gee.ai_recognition import detect_crop_type, generate_field_report
 
 
 # ── Irrigation Analysis Endpoints ──────────────────────────────────
@@ -215,11 +216,15 @@ class DashboardDataView(APIView):
             severity='critical', acknowledged=False
         ).count()
         avg_ndvi = (
-            sum(d['satellite_ndvi'] for d in data) / total_fields
+            sum((d['satellite_ndvi'] or 0) for d in data) / total_fields
             if total_fields else 0
         )
         total_water = sum(
             d['recommendation']['water_recommendation'].get('total_liters_field', 0)
+            for d in data if d['recommendation']
+        )
+        total_savings = sum(
+            d['recommendation']['water_recommendation'].get('savings', {}).get('liters_total', 0)
             for d in data if d['recommendation']
         )
 
@@ -231,6 +236,7 @@ class DashboardDataView(APIView):
                 'critical_alerts': critical_alerts,
                 'avg_ndvi': round(avg_ndvi, 2),
                 'total_water_liters': total_water,
+                'total_savings_liters': total_savings,
             }
         })
 
@@ -307,16 +313,24 @@ class CreateFieldWithAnalysisView(APIView):
         # 1. Ob-havo (real)
         weather_dict = fetch_real_weather(lat, lng)
 
-        # 2. GEE orqali NDVI + NDWI (real yoki fallback)
-        gee_data = get_satellite_indices(
+        # 2. GEE orqali barcha ma'lumotlarni bitta so'rovda olamiz (OPTIMIZATSIYA)
+        gee_data = get_full_spectral_analysis(
             polygon_coords=coords,
             lat=lat,
             lng=lng,
             days_back=30,
         )
-        ndvi_val = gee_data['ndvi']
-        ndwi_val = gee_data['ndwi']
+        
+        ndvi_val = gee_data['indices']['ndvi']
+        ndwi_val = gee_data['indices']['ndwi']
         gee_source = gee_data['source']
+
+        # 2.5 AI Crop Detection (Algoritmik + Fallback)
+        # Endi gee_data['bands'] tayyor, qayta GEE ga murojaat shart emas!
+        detected_crop = detect_crop_type(gee_data, region_context=f"{data.get('region', 'Nukus')}, Uzbekistan")
+        
+        # Qat'iy fallback: Agar AI topa olmasa yoki xato bo'lsa, 'cotton' qo'yiladi (Прочее emas)
+        final_crop_type = detected_crop if (detected_crop and detected_crop != 'other') else 'cotton'
 
         # 3. Field saqlash (defaults used for hidden fields)
         from django.utils import timezone
@@ -325,7 +339,7 @@ class CreateFieldWithAnalysisView(APIView):
             name=data.get('name', 'Yangi Dala'),
             area_hectares=area_ha,
             region=data.get('region', 'Nukus'),
-            crop_type=data.get('crop_type', 'cotton'),
+            crop_type=final_crop_type,
             crop_growth_stage='vegetative',
             soil_type='loamy',
             irrigation_system=data.get('irrigation_system', 'furrow'),
@@ -425,15 +439,15 @@ class RefreshFieldAnalysisView(APIView):
             defaults=weather_dict
         )
 
-        # 2. GEE: NDVI + NDWI yangilash
-        gee_data = get_satellite_indices(
+        # 2. GEE: Barcha ma'lumotlarni bitta so'rovda yangilash (OPTIMIZATSIYA)
+        gee_data = get_full_spectral_analysis(
             polygon_coords=field.polygon_coords or [],
             lat=field.latitude,
             lng=field.longitude,
             days_back=30,
         )
-        ndvi_val = gee_data['ndvi']
-        ndwi_val = gee_data['ndwi']
+        ndvi_val = gee_data['indices']['ndvi']
+        ndwi_val = gee_data['indices']['ndwi']
         gee_source = gee_data['source']
 
         from django.utils import timezone
@@ -534,3 +548,70 @@ class DeleteFieldView(APIView):
             return Response({'status': 'deleted'}, status=status.HTTP_204_NO_CONTENT)
         except Field.DoesNotExist:
             return Response({'error': 'Field not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class DetectCropTypeView(APIView):
+    """
+    POST /api/fields/<field_id>/detect-crop/
+    Gemini AI orqali ekin turini aniqlash.
+    """
+    def post(self, request, field_id):
+        try:
+            field = Field.objects.get(field_id=field_id)
+        except Field.DoesNotExist:
+            return Response({'error': 'Field not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        gee_data = get_full_spectral_analysis(field.polygon_coords, field.latitude, field.longitude)
+        if not gee_data or not gee_data.get('bands'):
+            return Response({'error': 'Spectral data not available from GEE'}, status=status.HTTP_400_BAD_REQUEST)
+
+        detected_crop = detect_crop_type(gee_data, region_context=f"{field.region}, Uzbekistan")
+        
+        if detected_crop:
+            old_crop = field.crop_type
+            field.crop_type = detected_crop
+            field.save(update_fields=['crop_type'])
+            
+            # Thumbnail URL ni vizualizatsiya uchun baribir qaytaramiz (agar kerak bo'lsa)
+            thumb_url = get_field_thumbnail_url(field.polygon_coords, field.latitude, field.longitude)
+            
+            return Response({
+                'detected_crop': detected_crop,
+                'old_crop': old_crop,
+                'status': 'updated',
+                'thumbnail_url': thumb_url,
+                'spectral_summary': spectral_profile.get('indices', {})
+            })
+        
+        return Response({'error': 'AI could not detect crop type from spectral data'}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+
+class FieldAIAnalysisView(APIView):
+    """
+    POST /api/fields/<field_id>/analyze-ai/
+    Dala ma'lumotlari asosida Gemini tomonidan batafsil tahlil.
+    """
+    def post(self, request, field_id):
+        try:
+            field = Field.objects.get(field_id=field_id)
+        except Field.DoesNotExist:
+            return Response({'error': 'Field not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        latest_sensor = field.soil_sensors.first()
+        latest_weather = field.weather_records.first()
+
+        data_for_ai = {
+            'crop_type': field.crop_type,
+            'ndvi': field.satellite_ndvi,
+            'ndwi': field.satellite_ndwi,
+            'soil_moisture': latest_sensor.moisture_percent if latest_sensor else 25.0,
+            'weather_temp': latest_weather.temperature_max_c if latest_weather else 35.0,
+            'weather_humidity': latest_weather.humidity_percent if latest_weather else 40.0,
+        }
+
+        report = generate_field_report(data_for_ai, region=field.region)
+        
+        return Response({
+            'report_markdown': report,
+            'timestamp': time.time()
+        })

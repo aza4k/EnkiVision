@@ -1,11 +1,13 @@
 {% load static %}
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EnkiVision — Агро-ГИС Нукусского района</title>
-    <meta name="description" content="Интеллектуальная система рекомендаций по поливу для полей Нукусского района — интеграция NDVI, NDWI и GEE.">
+    <meta name="description"
+        content="Интеллектуальная система рекомендаций по поливу для полей Нукусского района — интеграция NDVI, NDWI и GEE.">
 
     <!-- Fonts: Google Roboto -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -22,6 +24,7 @@
     <!-- Dashboard CSS -->
     <link rel="stylesheet" href="{% static 'dashboard/css/style.css' %}">
 </head>
+
 <body>
 
     <!-- ─── Fullscreen Map Background ────────────────────────── -->
@@ -47,6 +50,10 @@
             <div class="metric-item highlight-green">
                 <i class="fa-solid fa-satellite"></i> NDVI: <strong id="avgNDVI">—</strong>
             </div>
+            <div class="metric-item"
+                style="background: rgba(22, 163, 74, 0.1); color: var(--brand-success); border: 1px solid rgba(22,163,74,0.2);">
+                <i class="fa-solid fa-hand-holding-droplet"></i> Экономия: <strong id="totalSavings">—</strong>
+            </div>
             <div class="metric-item gee-status-badge" id="geeStatusBadge" title="Статус Google Earth Engine">
                 <i class="fa-solid fa-circle-notch fa-spin" id="geeStatusIcon"></i>
                 <span id="geeStatusText">GEE...</span>
@@ -62,22 +69,29 @@
         <div class="sidebar-header">
             <h2><i class="fa-solid fa-map-location-dot"></i> Поля Нукусского района</h2>
             <div class="map-legend">
-                <span class="legend-item" title="Полив не требуется"><span class="legend-dot" style="background: var(--brand-success)"></span>Норма</span>
-                <span class="legend-item" title="Низкая потребность"><span class="legend-dot" style="background: #8aa63d"></span>Низкая</span>
-                <span class="legend-item" title="Средняя потребность"><span class="legend-dot" style="background: var(--brand-warning)"></span>Средняя</span>
-                <span class="legend-item" title="Высокая потребность"><span class="legend-dot" style="background: var(--brand-danger)"></span>Высокая</span>
+                <span class="legend-item" title="Полив не требуется"><span class="legend-dot"
+                        style="background: var(--brand-success)"></span>Норма</span>
+                <span class="legend-item" title="Низкая потребность"><span class="legend-dot"
+                        style="background: #8aa63d"></span>Низкая</span>
+                <span class="legend-item" title="Средняя потребность"><span class="legend-dot"
+                        style="background: var(--brand-warning)"></span>Средняя</span>
+                <span class="legend-item" title="Высокая потребность"><span class="legend-dot"
+                        style="background: var(--brand-danger)"></span>Высокая</span>
             </div>
         </div>
 
         <div class="sidebar-tabs">
-            <button class="tab-btn active" onclick="switchTab('fields')"><i class="fa-solid fa-wheat-awn"></i> Поля</button>
-            <button class="tab-btn" onclick="switchTab('alerts')"><i class="fa-solid fa-circle-exclamation"></i> Уведомления</button>
+            <button class="tab-btn active" onclick="switchTab('fields')"><i class="fa-solid fa-wheat-awn"></i>
+                Поля</button>
+            <button class="tab-btn" onclick="switchTab('alerts')"><i class="fa-solid fa-circle-exclamation"></i>
+                Уведомления</button>
         </div>
 
         <div class="sidebar-content" id="tab-fields">
             <div class="search-wrap">
                 <i class="fa-solid fa-magnifying-glass search-icon"></i>
-                <input type="text" id="fieldSearch" placeholder="Поиск по названию или культуре..." class="field-search">
+                <input type="text" id="fieldSearch" placeholder="Поиск по названию или культуре..."
+                    class="field-search">
             </div>
             <div class="field-list" id="fieldList">
                 <div class="loading-placeholder"><i class="fa-solid fa-spinner fa-spin"></i> Загрузка слоев...</div>
@@ -86,7 +100,8 @@
 
         <div class="sidebar-content" id="tab-alerts" style="display: none;">
             <div class="alert-feed" id="alertFeed">
-                <div class="loading-placeholder"><i class="fa-solid fa-spinner fa-spin"></i> Загрузка телеметрии...</div>
+                <div class="loading-placeholder"><i class="fa-solid fa-spinner fa-spin"></i> Загрузка телеметрии...
+                </div>
             </div>
         </div>
 
@@ -107,8 +122,32 @@
                 <!-- Заполняется через JS -->
             </div>
             <div class="modal-actions">
-                <button id="refreshFieldBtn" class="action-btn btn-primary"><i class="fa-solid fa-satellite-dish"></i> Обновить GEE + Погоду</button>
-                <button id="deleteFieldBtn" class="action-btn btn-danger"><i class="fa-solid fa-trash-can"></i> Удалить поле</button>
+                <button id="refreshFieldBtn" class="action-btn btn-primary"><i class="fa-solid fa-satellite-dish"></i>
+                    Обновить GEE + Погоду</button>
+                <button id="analyzeAiBtn" class="action-btn btn-ai" title="Глубокий анализ поля с помощью ИИ"><i
+                        class="fa-solid fa-wand-magic-sparkles"></i> ИИ-Аналитик</button>
+                <button id="deleteFieldBtn" class="action-btn btn-danger"><i class="fa-solid fa-trash-can"></i> Удалить
+                    поле</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── AI Analysis Report Overlay ─────────────────────── -->
+    <div class="modal-overlay" id="aiOverlay" style="display:none;">
+        <div class="modal ai-report-modal">
+            <div class="modal-header ai-header">
+                <h2><i class="fa-solid fa-robot"></i> Интеллектуальный отчет</h2>
+                <button class="modal-close" id="aiOverlayClose"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body ai-report-body" id="aiReportContent">
+                <!-- AI Report rendered here -->
+                <div class="ai-loading">
+                    <div class="ai-pulse"></div>
+                    <p>ИИ анализирует спутниковые данные и прогноз погоды...</p>
+                </div>
+            </div>
+            <div class="modal-footer ai-footer">
+                <p><i class="fa-solid fa-shield-halved"></i> Рекомендации ИИ носят консультативный характер</p>
             </div>
         </div>
     </div>
@@ -120,7 +159,8 @@
             <button class="modal-close" id="createPanelClose"><i class="fa-solid fa-xmark"></i></button>
         </div>
         <div class="create-panel-body">
-            <p class="panel-subtitle"><i class="fa-solid fa-calculator"></i> Площадь рассчитывается автоматически. Индексы NDVI/NDWI запрашиваются из GEE.</p>
+            <p class="panel-subtitle"><i class="fa-solid fa-calculator"></i> Площадь рассчитывается автоматически.
+                Индексы NDVI/NDWI запрашиваются из GEE.</p>
             <form id="createFieldForm">
                 <div class="form-group">
                     <label>Название поля</label>
@@ -146,17 +186,6 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Культура</label>
-                    <select id="newFieldCrop">
-                        <option value="cotton" selected>Хлопок (Paxta)</option>
-                        <option value="wheat">Пшеница (Bug'doy)</option>
-                        <option value="corn">Кукуруза (Makka jo'xori)</option>
-                        <option value="rice">Рис (Sholi)</option>
-                        <option value="vegetables">Овощи (Sabzavotlar)</option>
-                        <option value="other">Другое (Boshqa)</option>
-                    </select>
-                </div>
-                <div class="form-group">
                     <label>Система полива</label>
                     <select id="newFieldSystem">
                         <option value="furrow">Бороздковый (арычный)</option>
@@ -173,9 +202,10 @@
     </div>
 
     <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-    <script src="{% static 'dashboard/js/app.js' %}?v=1.4"></script>
+    <script src="{% static 'dashboard/js/app.js' %}?v=2.2"></script>
 
     <script>
         function switchTab(tabId) {
@@ -187,4 +217,5 @@
         }
     </script>
 </body>
+
 </html>

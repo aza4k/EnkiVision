@@ -12,6 +12,8 @@ from irrigation.views import (
     DeleteFieldView,
     GEEStatusView,
     GEELayersView,
+    DetectCropTypeView,
+    FieldAIAnalysisView,
 )
 
 urlpatterns = [
@@ -26,6 +28,8 @@ urlpatterns = [
     path('fields/<str:field_id>/refresh/', RefreshFieldAnalysisView.as_view(), name='field-refresh'),
     path('fields/<str:field_id>/delete/', DeleteFieldView.as_view(), name='field-delete'),
     path('fields/<str:field_id>/history/', FieldHistoryView.as_view(), name='field-history'),
+    path('fields/<str:field_id>/detect-crop/', DetectCropTypeView.as_view(), name='field-detect-crop'),
+    path('fields/<str:field_id>/analyze-ai/', FieldAIAnalysisView.as_view(), name='field-analyze-ai'),
 
     # Alerts
     path('alerts/', AlertListView.as_view(), name='alert-list'),

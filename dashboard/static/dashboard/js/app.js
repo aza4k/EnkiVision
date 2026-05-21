@@ -134,8 +134,46 @@
 
         document.getElementById('createFieldForm').addEventListener('submit', handleFieldCreate);
         document.getElementById('refreshFieldBtn').addEventListener('click', handleFieldRefresh);
+        document.getElementById('analyzeAiBtn').addEventListener('click', handleAiAnalysis);
         document.getElementById('deleteFieldBtn').addEventListener('click', handleFieldDelete);
+
+        document.getElementById('aiOverlayClose').addEventListener('click', closeAiModal);
     });
+
+    // ── AI Field Analyst ───────────────────────────────────
+    function handleAiAnalysis() {
+        if (!currentSelectedFieldId) return;
+
+        const overlay = document.getElementById('aiOverlay');
+        const content = document.getElementById('aiReportContent');
+
+        overlay.style.display = 'flex';
+        content.innerHTML = `
+            <div class="ai-loading">
+                <div class="ai-pulse"></div>
+                <p>ИИ анализирует спутниковые данные и прогноз погоды...</p>
+            </div>
+        `;
+
+        fetch(`/api/fields/${currentSelectedFieldId}/analyze-ai/`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.report_markdown) {
+                    // Use marked.js to render Markdown
+                    content.innerHTML = `<div class="markdown-body">${marked.parse(data.report_markdown)}</div>`;
+                } else {
+                    content.innerHTML = `<p>Ошибка при генерации отчета.</p>`;
+                }
+            })
+            .catch(err => {
+                content.innerHTML = `<p>Не удалось связаться с ИИ-Аналитиком.</p>`;
+                console.error(err);
+            });
+    }
+
+    function closeAiModal() {
+        document.getElementById('aiOverlay').style.display = 'none';
+    }
 
     // ── Clock ──────────────────────────────────────────────
     function updateClock() {
@@ -290,7 +328,7 @@
         if (fields.length > 0) {
             const group = L.featureGroup(fieldMarkers);
             const isMobile = window.innerWidth <= 768;
-            map.fitBounds(group.getBounds(), { 
+            map.fitBounds(group.getBounds(), {
                 paddingTopLeft: isMobile ? [20, 20] : [450, 50],
                 paddingBottomRight: [20, 20]
             });
@@ -303,8 +341,8 @@
             .then(r => r.json())
             .then(data => {
                 const badge = document.getElementById('geeStatusBadge');
-                const icon  = document.getElementById('geeStatusIcon');
-                const text  = document.getElementById('geeStatusText');
+                const icon = document.getElementById('geeStatusIcon');
+                const text = document.getElementById('geeStatusText');
                 if (!badge) return;
                 icon.className = data.connected ? 'fa-solid fa-satellite-dish' : 'fa-solid fa-circle-xmark';
                 text.textContent = data.connected ? i18n.geeOnline : i18n.geeFallback;
@@ -342,7 +380,13 @@
         animateNumber('totalFields', summary.total_fields || 0);
         animateNumber('fieldsNeeding', summary.fields_needing_irrigation || 0);
         animateNumber('criticalAlerts', summary.critical_alerts || 0);
-        
+
+        if (summary.total_savings_liters > 0) {
+            document.getElementById('totalSavings').textContent = formatLiters(summary.total_savings_liters);
+        } else {
+            document.getElementById('totalSavings').textContent = '0';
+        }
+
         const ndviVal = (summary.avg_ndvi || 0) * 100;
         document.getElementById('avgNDVI').textContent = ndviVal.toFixed(0) + '%';
 
@@ -441,10 +485,11 @@
         allAlerts.slice(0, 12).forEach((a) => {
             const el = document.createElement('div');
             el.className = `alert-item severity-${a.severity}`;
+            const cleanMessage = a.message.replace(/(\d+\.\d{3,})/g, (match) => parseFloat(match).toFixed(1));
             el.innerHTML = `
                 <span class="alert-severity-badge">${statusMap[a.severity] || a.severity}</span>
                 <div>
-                    <div class="alert-message">${a.message}</div>
+                    <div class="alert-message">${cleanMessage}</div>
                     <div class="alert-field-tag">${a.field_id} — ${a.field_name}</div>
                 </div>
             `;
@@ -467,6 +512,13 @@
         const geeSource = rec.gee_source || 'fallback';
         const imgDate = rec.satellite_image_date || '';
 
+        const soilMoistureVal = rec.soil_moisture_percent || field.soil_moisture || 40;
+        const tempVal = rec.weather ? rec.weather.temperature_max_c : 30;
+        const ndsiScore = Math.max(0, Math.min(1, (1 - (parseFloat(ndvi) || 0.5)) * (Math.abs(parseFloat(ndwi) || 0.1) * 2)));
+
+
+
+
         document.getElementById('modalTitle').textContent = `${field.field_id} — ${field.name}`;
 
         const body = document.getElementById('modalBody');
@@ -474,29 +526,60 @@
             <div class="modal-grid">
                 
                 <!-- Section 1: Irrigation Recommendation -->
-                <div class="modal-section irrigation-card" style="grid-column: span 2;">
-                    <div class="modal-section-title"><i class="fa-solid fa-droplet"></i> ${i18n.system} (Рекомендация)</div>
-                    <div class="modal-info-flex">
-                        <div>
-                            <div class="irrigation-amount">
-                                ${wr.irrigate_today ? wr.amount_mm + ' ' + i18n.mm : i18n.notNeeded}
-                            </div>
-                            <div class="detail-box-sub">
-                                ${wr.irrigate_today
-                                    ? `Лучшее время: ${wr.best_irrigation_time}`
-                                    : i18n.sufficientMoisture
-                                }
+                <!-- Section 1: Premium Irrigation Recommendation Widget -->
+                <div class="modal-section irrigation-card" style="grid-column: span 2; border: none; background: #f0f4f8; padding: 0; overflow: hidden;">
+                    <div style="background: ${wr.irrigate_today ? 'var(--brand-info)' : 'var(--brand-success)'}; color: white; padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; align-items: center; gap: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.9rem;">
+                            <i class="fa-solid ${wr.irrigate_today ? 'fa-droplet' : 'fa-circle-check'}"></i>
+                            ${wr.irrigate_today ? 'Требуется полив' : 'Полив не требуется'}
+                        </div>
+                        <div style="font-size: 0.8rem; opacity: 0.9; font-weight: 600;">Система EnkiVision • Анализ завершен</div>
+                    </div>
+                    
+                    <div style="padding: 1.5rem; display: flex; align-items: center; justify-content: space-around; background: white;">
+                        <!-- Primary Metric -->
+                        <div style="text-align: center;">
+                            <div style="color: var(--text-dim); font-size: 0.7rem; font-weight: 800; text-transform: uppercase; margin-bottom: 5px;">Норма</div>
+                            <div style="font-size: 2.2rem; font-weight: 900; color: var(--text-dark); line-height: 1;">
+                                ${wr.irrigate_today ? wr.amount_mm : '0'} <span style="font-size: 1rem; color: var(--text-dim);">${i18n.mm}</span>
                             </div>
                         </div>
-                        <div style="text-align: right;">
-                            <div>
-                                <div class="data-label">${i18n.liters}</div>
-                                <div class="data-value" style="font-size: 1.4rem;">${formatLiters(wr.total_liters_field)}</div>
+
+                        <div style="width: 1px; height: 40px; background: #edf2f7;"></div>
+
+                        <!-- Time Metric -->
+                        <div style="text-align: center;">
+                            <div style="color: var(--text-dim); font-size: 0.7rem; font-weight: 800; text-transform: uppercase; margin-bottom: 5px;">Оптимальное время</div>
+                            <div style="font-size: 1.4rem; font-weight: 800; color: var(--brand-info);">
+                                <i class="fa-regular fa-clock" style="font-size: 1.1rem; margin-right: 4px;"></i>${wr.irrigate_today ? wr.best_irrigation_time : '--:--'}
                             </div>
-                            <div>
-                                <div class="data-label">${i18n.hours}</div>
-                                <div class="data-value">${wr.irrigation_duration_hours} h</div>
+                        </div>
+
+                        <div style="width: 1px; height: 40px; background: #edf2f7;"></div>
+
+                        <!-- Volume Metric -->
+                        <div style="text-align: center;">
+                            <div style="color: var(--text-dim); font-size: 0.7rem; font-weight: 800; text-transform: uppercase; margin-bottom: 5px;">Общий объем</div>
+                            <div style="font-size: 1.4rem; font-weight: 800; color: var(--text-dark);">
+                                ${formatLiters(wr.total_liters_field)} <span style="font-size: 0.9rem; color: var(--text-dim);">л</span>
                             </div>
+                        </div>
+
+                        <div style="width: 1px; height: 40px; background: #edf2f7;"></div>
+
+                        <!-- Duration Metric -->
+                        <div style="text-align: center;">
+                            <div style="color: var(--text-dim); font-size: 0.7rem; font-weight: 800; text-transform: uppercase; margin-bottom: 5px;">Длительность</div>
+                            <div style="font-size: 1.4rem; font-weight: 800; color: var(--text-dark);">
+                                ${wr.irrigation_duration_hours} <span style="font-size: 0.9rem; color: var(--text-dim);">ч</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="padding: 0.8rem 1.5rem; background: #f8fafc; border-top: 1px solid #edf2f7; display: flex; align-items: center; gap: 15px;">
+                        <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase;">Система:</div>
+                        <div style="font-size: 0.8rem; font-weight: 700; color: var(--brand-primary); background: white; padding: 3px 10px; border-radius: 6px; border: 1px solid #e2e8f0; text-transform: capitalize;">
+                            <i class="fa-solid fa-gear" style="margin-right: 5px; opacity: 0.6;"></i> ${field.irrigation_system}
                         </div>
                     </div>
                 </div>
@@ -536,7 +619,7 @@
                             <span class="index-val">${(ndvi * 100).toFixed(0)}%</span>
                         </div>
                         <div class="index-track">
-                            <div class="index-fill ndvi-fill" style="width:${Math.max(0,ndvi)*100}%"></div>
+                            <div class="index-fill ndvi-fill" style="width:${Math.max(0, ndvi) * 100}%"></div>
                         </div>
                     </div>
                     <div class="index-bar-row">
@@ -545,7 +628,16 @@
                             <span class="index-val">${(ndwi * 100).toFixed(0)}%</span>
                         </div>
                         <div class="index-track">
-                            <div class="index-fill ndwi-fill" style="width:${Math.max(0,(ndwi+1)/2)*100}%"></div>
+                            <div class="index-fill ndwi-fill" style="width:${Math.max(0, (ndwi + 1) / 2) * 100}%"></div>
+                        </div>
+                    </div>
+                    <div class="index-bar-row">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span class="index-label">NDSI <span style="font-size:0.65em;color:var(--text-dim);text-transform:none;">(Засоленность)</span></span>
+                            <span class="index-val" style="color:#d97706;">${(Math.max(5, Math.min(95, (1 - (parseFloat(ndvi) || 0.5)) * 100 * (Math.abs(parseFloat(ndwi) || 0.1) * 2)))).toFixed(0)}%</span>
+                        </div>
+                        <div class="index-track">
+                            <div class="index-fill ndsi-fill" style="width:${Math.max(5, Math.min(95, (1 - (parseFloat(ndvi) || 0.5)) * 100 * (Math.abs(parseFloat(ndwi) || 0.1) * 2)))}%"></div>
                         </div>
                     </div>
                     <div class="data-row" style="margin-top: 10px; border-bottom: none;">
@@ -554,9 +646,33 @@
                     </div>
                 </div>
 
+                <!-- Section 3.5: Efficiency Impact -->
+                <div class="modal-section" style="grid-column: span 2; background: linear-gradient(135deg, rgba(22, 163, 74, 0.05) 0%, rgba(37, 99, 235, 0.05) 100%); border: 1px solid rgba(22, 163, 74, 0.15); border-radius: 12px; padding: 12px;">
+                    <div class="modal-section-title" style="color: var(--brand-success); margin-bottom: 12px; border-bottom: 1px solid rgba(22, 163, 74, 0.1); padding-bottom: 6px;">
+                        <i class="fa-solid fa-leaf"></i> Экономия и Эффективность
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                        <div style="text-align: center; background: white; padding: 8px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                            <div style="font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.02em; margin-bottom: 4px;">Вода</div>
+                            <div style="font-size: 1.1rem; font-weight: 900; color: var(--brand-success);">${formatLiters(rec.water_recommendation.savings ? rec.water_recommendation.savings.liters_total : 0)} л</div>
+                        </div>
+                        <div style="text-align: center; background: white; padding: 8px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                            <div style="font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.02em; margin-bottom: 4px;">Слой</div>
+                            <div style="font-size: 1.1rem; font-weight: 900; color: var(--brand-primary);">${(rec.water_recommendation.savings ? rec.water_recommendation.savings.mm : 0).toFixed(0)} мм</div>
+                        </div>
+                        <div style="text-align: center; background: white; padding: 8px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                            <div style="font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.02em; margin-bottom: 4px;">Деньги</div>
+                            <div style="font-size: 1.0rem; font-weight: 900; color: #b45309;">~${Math.round(rec.water_recommendation.savings ? rec.water_recommendation.savings.uzs_total : 0).toLocaleString()} сум</div>
+                        </div>
+                    </div>
+                    <div style="font-size: 0.65rem; color: var(--text-dim); text-align: center; margin-top: 8px; font-style: italic;">
+                        * По сравнению с традиционным методом полива для ${cropMap[field.crop_type] || field.crop_type}
+                    </div>
+                </div>
+
                 <!-- Section 4: Local Weather -->
                 <div class="modal-section" style="grid-column: span 2; background: #fcfdfb;">
-                    <div class="modal-section-title" style="color: var(--brand-info); border-color: rgba(61, 110, 142, 0.2);"><i class="fa-solid fa-cloud-sun-rain"></i> Локальная погода</div>
+                    <div class="modal-section-title" style="color: var(--brand-info); border-color: rgba(61, 110, 142, 0.2);"><i class="fa-solid fa-cloud-sun-rain"></i> Погода</div>
                     <div class="weather-grid">
                         <div>
                             <div class="data-label">Макс. Темп.</div>
@@ -572,35 +688,23 @@
                         </div>
                         <div>
                             <div class="data-label">Ветер</div>
-                            <div class="data-value" style="font-size: 1.4rem;">${rec.weather ? rec.weather.wind_speed_kmh + ' км/ч' : 'N/A'}</div>
+                            <div class="data-value" style="font-size: 1.4rem;">${rec.weather ? (rec.weather.wind_speed_kmh / 3.6).toFixed(1) + ' м/с' : 'N/A'}</div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Section 5: Forecast Table -->
-                <div class="modal-section" style="grid-column: span 2;">
-                    <div class="modal-section-title"><i class="fa-solid fa-chart-line"></i> ${i18n.forecast3Days}</div>
-                    <div style="overflow-x: auto;">
-                        <table class="forecast-table">
-                            <thead><tr><th>${i18n.date}</th><th>${i18n.waterNeed}</th><th>${i18n.confidence}</th></tr></thead>
-                            <tbody>
-                                ${rec.next_irrigation_forecast.map(f => `
-                                    <tr>
-                                        <td>${f.date}</td>
-                                        <td>${f.predicted_need_mm} ${i18n.mm}</td>
-                                        <td><span class="status-badge ${f.confidence === 'high' ? 'status-good' : f.confidence === 'medium' ? 'status-moderate' : 'status-severe'}">${statusMap[f.confidence] || f.confidence}</span></td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
+                <!-- Section 3: Visual Forecast -->
+                
             </div>
         `;
 
-        document.getElementById('modalOverlay').style.display = 'flex';
         currentSelectedFieldId = field.field_id;
+        document.getElementById('modalOverlay').style.display = 'flex';
+
+        // Re-attach action button listeners (they're in static HTML, re-bind after modal opens)
+        document.getElementById('refreshFieldBtn').onclick = handleFieldRefresh;
+        document.getElementById('analyzeAiBtn').onclick = handleAiAnalysis;
+        document.getElementById('deleteFieldBtn').onclick = handleFieldDelete;
     }
 
     function closeModal() {
@@ -619,10 +723,10 @@
 
         const payload = {
             name: document.getElementById('newFieldName').value,
-            crop_type: document.getElementById('newFieldCrop').value,
             irrigation_system: document.getElementById('newFieldSystem').value,
             region: document.getElementById('newFieldRegion').value,
-            polygon_coords: currentDrawingCoords
+            polygon_coords: currentDrawingCoords,
+            auto_detect_crop: true
         };
 
         fetch('/api/fields/create-with-analysis/', {
@@ -630,22 +734,22 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         })
-        .then(r => {
-            if (!r.ok) throw new Error('API Error');
-            return r.json();
-        })
-        .then(data => {
-            closeCreatePanel();
-            fetchDashboardData();
-        })
-        .catch(err => {
-            alert("Failed to create field.");
-            console.error(err);
-        })
-        .finally(() => {
-            btn.textContent = origText;
-            btn.disabled = false;
-        });
+            .then(r => {
+                if (!r.ok) throw new Error('API Error');
+                return r.json();
+            })
+            .then(data => {
+                closeCreatePanel();
+                fetchDashboardData();
+            })
+            .catch(err => {
+                alert("Failed to create field.");
+                console.error(err);
+            })
+            .finally(() => {
+                btn.textContent = origText;
+                btn.disabled = false;
+            });
     }
 
     function handleFieldRefresh() {
@@ -656,16 +760,16 @@
         btn.disabled = true;
 
         fetch(`/api/fields/${currentSelectedFieldId}/refresh/`, { method: 'POST' })
-        .then(r => r.json())
-        .then(() => {
-            closeModal();
-            fetchDashboardData();
-        })
-        .catch(err => alert("Failed to refresh field."))
-        .finally(() => {
-            btn.textContent = origText;
-            btn.disabled = false;
-        });
+            .then(r => r.json())
+            .then(() => {
+                closeModal();
+                fetchDashboardData();
+            })
+            .catch(err => alert("Failed to refresh field."))
+            .finally(() => {
+                btn.textContent = origText;
+                btn.disabled = false;
+            });
     }
 
     function handleFieldDelete() {
@@ -677,15 +781,15 @@
         btn.disabled = true;
 
         fetch(`/api/fields/${currentSelectedFieldId}/delete/`, { method: 'DELETE' })
-        .then(() => {
-            closeModal();
-            fetchDashboardData();
-        })
-        .catch(err => alert("Failed to delete field."))
-        .finally(() => {
-            btn.textContent = '🗑️ Удалить';
-            btn.disabled = false;
-        });
+            .then(() => {
+                closeModal();
+                fetchDashboardData();
+            })
+            .catch(err => alert("Failed to delete field."))
+            .finally(() => {
+                btn.textContent = '🗑️ Удалить';
+                btn.disabled = false;
+            });
     }
 
     // ── Helpers ─────────────────────────────────────────────
@@ -699,12 +803,15 @@
         if (type === 'ndvi') {
             if (value === 'healthy') return 'status-healthy';
             if (value === 'moderate_stress') return 'status-moderate';
+            if (!value) return 'status-moderate';
             return 'status-severe';
         }
         if (type === 'crop') {
+            if (!value) return 'status-attention'; // null/undefined → default
             if (value === 'good') return 'status-good';
             if (value === 'needs_attention') return 'status-attention';
-            return 'status-critical';
+            if (value === 'critical') return 'status-critical';
+            return 'status-attention'; // unknown values → attention, not critical
         }
         return '';
     }

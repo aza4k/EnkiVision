@@ -8,3 +8,6 @@ dj-database-url
 python-dotenv
 whitenoise
 psycopg2-binary
+google-generativeai
+google-genai
+tenacity

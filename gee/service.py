@@ -24,48 +24,18 @@ def _init_gee():
 
     try:
         import ee
-        import json
-        import tempfile
-
         project_id = os.environ.get('GEE_PROJECT')
-        gee_json_str = os.environ.get('GEE_SERVICE_ACCOUNT_JSON')
 
-        # 1-usul: Project ID orqali (User xohishiga ko'ra)
-        # Eslatma: Bu usul serverda ishlashi uchun Application Default Credentials 
-        # yoki Service Account JSON talab qilinishi mumkin.
-        if project_id and not gee_json_str:
-            ee.Initialize(project=project_id)
-            _GEE_AVAILABLE = True
-            logger.info(f"GEE: Project ID ({project_id}) orqali ulandi.")
+        # Simply initialize (ee.Initialize handles checks)
+        ee.Initialize(project=project_id)
 
-        # 2-usul: Service Account JSON string (Railway/Production uchun eng ishonchli usul)
-        elif gee_json_str:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-                f.write(gee_json_str)
-                temp_key_path = f.name
-            
-            try:
-                service_account = json.loads(gee_json_str).get('client_email')
-                ee.Initialize(
-                    credentials=ee.ServiceAccountCredentials(service_account, temp_key_path),
-                    project=project_id
-                )
-                _GEE_AVAILABLE = True
-                logger.info("GEE: Service Account JSON orqali ulandi.")
-            finally:
-                if os.path.exists(temp_key_path):
-                    os.remove(temp_key_path)
-
-        # 3-usul: Default Initialize
-        else:
-            ee.Initialize()
-            _GEE_AVAILABLE = True
-            logger.info("GEE: Default credentials bilan ulandi.")
-
-    except Exception as exc:
-        logger.warning(f"GEE ulanmadi (fallback ishlatiladi): {exc}")
+        _GEE_AVAILABLE = True
+        logger.info(f"GEE: Successfully initialized with project {project_id}")
+    except Exception as e:
+        logger.error(f"GEE: Failed to initialize: {e}")
         _GEE_AVAILABLE = False
 
+    
     _GEE_INITIALIZED = True
     return _GEE_AVAILABLE
 
@@ -103,6 +73,102 @@ def _ndwi_fallback(lat: float, lng: float, ndvi: float) -> float:
 
 
 # ── Main GEE Functions ─────────────────────────────────────────────
+def get_full_spectral_analysis(
+    polygon_coords: list,
+    lat: float = 42.45,
+    lng: float = 59.60,
+    days_back: int = 30,
+) -> dict:
+    """
+    Bitta GEE so'rovida barcha spektral ma'lumotlarni oladi.
+    Tizimni tezlashtirish uchun optimallashtirilgan.
+    """
+    today = date.today()
+    end_date = today.isoformat()
+    start_date = (today - timedelta(days=days_back)).isoformat()
+
+    if not _init_gee():
+        # Fallback mantiqi (mavjud koddan foydalanamiz)
+        ndvi = _ndvi_fallback(lat, lng, today.month)
+        ndwi = _ndwi_fallback(lat, lng, ndvi)
+        return {
+            'indices': {'ndvi': ndvi, 'ndwi': ndwi},
+            'bands': {},
+            'source': 'fallback',
+            'image_date': end_date,
+            'cloud_cover': None
+        }
+
+    import ee
+    try:
+        if polygon_coords and len(polygon_coords) >= 3:
+            ring = [[c[1], c[0]] for c in polygon_coords]
+            geometry = ee.Geometry.Polygon([ring])
+        else:
+            geometry = ee.Geometry.Point([lng, lat]).buffer(500)
+
+        # Sentinel-2 Collection
+        collection = (
+            ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+            .filterBounds(geometry)
+            .filterDate(start_date, end_date)
+            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 25))
+            .sort('CLOUDY_PIXEL_PERCENTAGE')
+        )
+
+        # Agar Sentinel bo'lmasa Landsat ga o'tish (zaxira)
+        if collection.size().getInfo() == 0:
+             # Sodda bo'lishi uchun Landsat qismini bu yerda qoldirmaymiz yoki keyinroq qo'shamiz
+             # Hozircha bo'sh qaytaramiz yoki Sentinelga ishonamiz
+             pass
+
+        image = collection.first()
+        
+        # Barcha kerakli indekslar va bandlarni bitta rasmga yig'amiz
+        # NDVI va NDWI
+        ndvi_img = image.normalizedDifference(['B8', 'B4']).rename('ndvi')
+        ndwi_img = image.normalizedDifference(['B3', 'B8']).rename('ndwi')
+        
+        # Bandlar
+        spectral_bands = image.select(['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B11', 'B12'])
+        
+        # Hammasini birlashtirish
+        combined = image.addBands([ndvi_img, ndwi_img])
+        
+        # Region bo'yicha o'rtacha hisoblash (BITTA .getInfo()!)
+        stats = combined.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=geometry,
+            scale=20,
+            maxPixels=1e8
+        ).getInfo()
+
+        img_date = ee.Date(image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+        cloud_pct = image.get('CLOUDY_PIXEL_PERCENTAGE').getInfo()
+
+        return {
+            'indices': {
+                'ndvi': round(stats.get('ndvi', 0), 4),
+                'ndwi': round(stats.get('ndwi', 0), 4)
+            },
+            'bands': {k: stats.get(k) for k in ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B11', 'B12']},
+            'source': 'GEE',
+            'image_date': img_date,
+            'cloud_cover': round(float(cloud_pct), 1) if cloud_pct else 0
+        }
+
+    except Exception as e:
+        logger.warning(f"GEE Optimallashtirilgan hisoblash xatosi: {e}")
+        ndvi = _ndvi_fallback(lat, lng, today.month)
+        return {
+            'indices': {'ndvi': ndvi, 'ndwi': _ndwi_fallback(lat, lng, ndvi)},
+            'bands': {},
+            'source': 'fallback',
+            'image_date': end_date,
+            'cloud_cover': None
+        }
+
+
 def get_satellite_indices(
     polygon_coords: list,
     lat: float = 42.45,
@@ -110,39 +176,15 @@ def get_satellite_indices(
     days_back: int = 30,
 ) -> dict:
     """
-    Polygon yoki koordinatalar uchun NDVI va NDWI hisoblaydi.
-
-    Returns:
-        {
-            'ndvi': float,
-            'ndwi': float,
-            'source': 'GEE' | 'fallback',
-            'image_date': str,
-            'cloud_cover': float,
-        }
+    Eski funksiya - endi yangi optimallashtirilgan funksiyadan foydalanadi.
     """
-    today = date.today()
-    month = today.month
-    end_date = today.isoformat()
-    start_date = (today - timedelta(days=days_back)).isoformat()
-
-    gee_ok = _init_gee()
-
-    if gee_ok:
-        try:
-            return _compute_gee_indices(polygon_coords, lat, lng, start_date, end_date)
-        except Exception as exc:
-            logger.warning(f"GEE hisoblash xatosi: {exc}. Fallback ishlatiladi.")
-
-    # ── Fallback ──
-    ndvi = _ndvi_fallback(lat, lng, month)
-    ndwi = _ndwi_fallback(lat, lng, ndvi)
+    res = get_full_spectral_analysis(polygon_coords, lat, lng, days_back)
     return {
-        'ndvi': ndvi,
-        'ndwi': ndwi,
-        'source': 'fallback',
-        'image_date': today.isoformat(),
-        'cloud_cover': None,
+        'ndvi': res['indices']['ndvi'],
+        'ndwi': res['indices']['ndwi'],
+        'source': res['source'],
+        'image_date': res['image_date'],
+        'cloud_cover': res['cloud_cover'],
     }
 
 
@@ -231,6 +273,100 @@ def _compute_gee_indices(
         'source': 'GEE',
         'image_date': img_date,
         'cloud_cover': round(float(cloud_pct), 1),
+    }
+
+
+def get_field_thumbnail_url(polygon_coords: list, lat: float, lng: float) -> str:
+    """
+    Field uchun True Color (RGB) thumbnail URL'ini qaytaradi.
+    Gemini API ga yuborish uchun ishlatiladi.
+    """
+    if not _init_gee():
+        return ""
+
+    import ee
+    
+    if polygon_coords and len(polygon_coords) >= 3:
+        ring = [[c[1], c[0]] for c in polygon_coords]
+        geometry = ee.Geometry.Polygon([ring])
+    else:
+        geometry = ee.Geometry.Point([lng, lat]).buffer(500).bounds()
+
+    # Sentinel-2 True Color
+    end_date = date.today().isoformat()
+    start_date = (date.today() - timedelta(days=90)).isoformat()
+    
+    collection = (
+        ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+        .filterBounds(geometry)
+        .filterDate(start_date, end_date)
+        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))
+        .sort('CLOUDY_PIXEL_PERCENTAGE')
+    )
+
+    if collection.size().getInfo() == 0:
+        return ""
+
+    image = collection.first().visualize(
+        bands=['B4', 'B3', 'B2'],
+        min=0,
+        max=3000
+    )
+
+    return image.getThumbURL({
+        'region': geometry,
+        'dimensions': 512,
+        'format': 'jpg'
+    })
+
+
+def get_field_spectral_profile(polygon_coords: list, lat: float, lng: float) -> dict:
+    """
+    Field uchun spektral profilni (band qiymatlari) qaytaradi.
+    Tekstli AI tahlili uchun ishlatiladi (rasm yubormaslik uchun).
+    """
+    if not _init_gee():
+        return {}
+
+    import ee
+    
+    if polygon_coords and len(polygon_coords) >= 3:
+        ring = [[c[1], c[0]] for c in polygon_coords]
+        geometry = ee.Geometry.Polygon([ring])
+    else:
+        geometry = ee.Geometry.Point([lng, lat]).buffer(300)
+
+    # Sentinel-2 Bands: B2, B3, B4 (Visible), B5, B6, B7 (Red Edge), B8, B8A (NIR), B11, B12 (SWIR)
+    collection = (
+        ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+        .filterBounds(geometry)
+        .filterDate((date.today() - timedelta(days=45)).isoformat(), date.today().isoformat())
+        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 15))
+        .sort('CLOUDY_PIXEL_PERCENTAGE')
+    )
+
+    if collection.size().getInfo() == 0:
+        return {}
+
+    image = collection.first()
+    
+    # Kengaytirilgan bandlar to'plami
+    selected_bands = ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B11', 'B12']
+    stats = image.select(selected_bands).reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=geometry,
+        scale=20
+    ).getInfo()
+
+    # NDVI va NDWI ni ham qo'shamiz
+    ndvi = image.normalizedDifference(['B8', 'B4']).reduceRegion(ee.Reducer.mean(), geometry, 20).getInfo().get('nd', 0)
+    ndwi = image.normalizedDifference(['B3', 'B8']).reduceRegion(ee.Reducer.mean(), geometry, 20).getInfo().get('nd', 0)
+
+    return {
+        'bands': stats,
+        'indices': {'ndvi': ndvi, 'ndwi': ndwi},
+        'date': image.get('system:time_start').getInfo(),
+        'cloud_cover': image.get('CLOUDY_PIXEL_PERCENTAGE').getInfo()
     }
 
 

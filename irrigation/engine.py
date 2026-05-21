@@ -55,8 +55,18 @@ class IrrigationEngine:
     }
 
     # ── Hot summer regions that get +5% correction ──────────────────
-
     HOT_REGIONS = {'Fergana', 'Bukhara', 'Navoi', 'Nukus', 'Karakalpakstan'}
+
+    # ── Traditional Irrigation Norms for baseline comparison ────────
+    # Represent average liters/mm used by traditional farmers (Baseline)
+    TRADITIONAL_NORMS = {
+        'cotton': 45,
+        'wheat': 40,
+        'corn': 55,
+        'vegetables': 35,
+        'rice': 80,
+        'other': 40
+    }
 
     # ── Public API ──────────────────────────────────────────────────
 
@@ -110,10 +120,10 @@ class IrrigationEngine:
 
         rainfall = weather.get('rainfall_mm', 0)
         forecast_rain = weather.get('forecast_rain_3days_mm', 0)
-        soil_moisture = payload.get('soil_moisture_percent', 50)
+        soil_moisture = float(payload.get('soil_moisture_percent', 50) or 50)
         soil_type = payload.get('soil_type', 'loamy')
-        ndvi = payload.get('satellite_ndvi', 0.5)
-        ndwi = payload.get('satellite_ndwi', -0.1)
+        ndvi = float(payload.get('satellite_ndvi', 0.5) or 0.5)
+        ndwi = float(payload.get('satellite_ndwi', -0.1) or -0.1)
         region = payload.get('region', '')
         season = payload.get('season', 'summer')
         water_pressure = payload.get('water_source_pressure', 'normal')
@@ -134,16 +144,16 @@ class IrrigationEngine:
         if soil_moisture > 70:
             reduction = adjusted * 0.30
             adjusted -= reduction
-            reasoning.append(f"high_soil_moisture_reduction=-{reduction:.1f}mm (moisture={soil_moisture}%)")
+            reasoning.append(f"high_soil_moisture_reduction=-{reduction:.1f}mm (moisture={soil_moisture:.1f}%)")
         elif soil_moisture < 30:
             increase = adjusted * 0.12
             adjusted += increase
-            reasoning.append(f"low_soil_moisture_increase=+{increase:.1f}mm (moisture={soil_moisture}%)")
+            reasoning.append(f"low_soil_moisture_increase=+{increase:.1f}mm (moisture={soil_moisture:.1f}%)")
             if soil_moisture < 20:
                 alerts.append({
                     'type': 'drought_risk',
                     'severity': 'warning',
-                    'message': f'Tuproq namligi juda past: {soil_moisture}%. Shoshilinch sug\'orish tavsiya etiladi.',
+                    'message': f'Влажность почвы слишком низкая: {soil_moisture:.1f}%. Рекомендуется срочный полив.',
                     'action_required': True,
                 })
 
@@ -162,7 +172,7 @@ class IrrigationEngine:
             alerts.append({
                 'type': 'drought_risk',
                 'severity': 'critical',
-                'message': f'NDVI={ndvi:.2f} — o\'simlik holati yomon. Favqulodda sug\'orish kerak.',
+                'message': f'NDVI={ndvi:.2f} — состояние растений неудовлетворительное. Требуется экстренный полив.',
                 'action_required': True,
             })
             increase = adjusted * 0.15
@@ -172,26 +182,26 @@ class IrrigationEngine:
         if ndvi > 0.6 and soil_moisture > 65:
             reduction = adjusted * 0.20
             adjusted -= reduction
-            reasoning.append(f"healthy_field_reduction=-{reduction:.1f}mm (NDVI={ndvi}, moisture={soil_moisture}%)")
+            reasoning.append(f"healthy_field_reduction=-{reduction:.1f}mm (NDVI={ndvi}, moisture={soil_moisture:.1f}%)")
 
         # ── NDWI suv holati korreksiyasi ────────────────────────
         if ndwi < -0.2:
             # Dala juda quruq — suv kam
             increase = adjusted * 0.10
             adjusted += increase
-            reasoning.append(f"ndwi_dry_field_increase=+{increase:.1f}mm (NDWI={ndwi:.3f})")
+            reasoning.append(f"ndwi_dry_field_increase=+{increase:.1f}mm (NDWI={ndwi:.2f})")
             if ndwi < -0.4:
                 alerts.append({
                     'type': 'drought_risk',
                     'severity': 'warning',
-                    'message': f'NDWI={ndwi:.3f} — dala suv ta\'minotida jiddiy yetishmovchilik.',
+                    'message': f'NDWI={ndwi:.2f} — серьезный дефицит водоснабжения поля.',
                     'action_required': True,
                 })
         elif ndwi > 0.2:
             # Dala nam — suvni kamaytirish
             reduction = adjusted * 0.15
             adjusted -= reduction
-            reasoning.append(f"ndwi_wet_field_reduction=-{reduction:.1f}mm (NDWI={ndwi:.3f})")
+            reasoning.append(f"ndwi_wet_field_reduction=-{reduction:.1f}mm (NDWI={ndwi:.2f})")
 
         # ── Regional heat correction (summer) ───────────────────
         if region in self.HOT_REGIONS and season == 'summer':
@@ -208,7 +218,7 @@ class IrrigationEngine:
             alerts.append({
                 'type': 'data_gap',
                 'severity': 'critical',
-                'message': 'Suv bosimi tanqis darajada! Sug\'orish hajmi qisqartirildi.',
+                'message': 'Критически низкое давление воды! Объем полива сокращен.',
                 'action_required': True,
             })
         elif water_pressure == 'low':
@@ -217,7 +227,7 @@ class IrrigationEngine:
             alerts.append({
                 'type': 'data_gap',
                 'severity': 'warning',
-                'message': 'Suv bosimi past. Sug\'orish rejasi moslashtirildi.',
+                'message': 'Низкое давление воды. План полива скорректирован.',
                 'action_required': False,
             })
 
@@ -227,7 +237,7 @@ class IrrigationEngine:
             alerts.append({
                 'type': 'heat_stress',
                 'severity': 'warning',
-                'message': f'Ekstremal issiqlik: {temp_max}°C. O\'simliklarni kuzatib boring.',
+                'message': f'Экстремальная жара: {temp_max}°C. Следите за состоянием растений.',
                 'action_required': False,
             })
 
@@ -318,9 +328,9 @@ class IrrigationEngine:
         crop_type = payload.get('crop_type', 'other')
         growth_stage = payload.get('crop_growth_stage', 'vegetative')
         irrigation_system = payload.get('irrigation_system', 'furrow')
-        soil_moisture = payload.get('soil_moisture_percent', 50)
-        ndvi = payload.get('satellite_ndvi', 0.5)
-        ndwi = payload.get('satellite_ndwi', -0.1)
+        soil_moisture = float(payload.get('soil_moisture_percent', 50) or 50)
+        ndvi = float(payload.get('satellite_ndvi', 0.5) or 0.5)
+        ndwi = float(payload.get('satellite_ndwi', -0.1) or -0.1)
         weather = payload.get('weather_today', {})
         temp_max = weather.get('temperature_max_c', 30)
         temp_min = weather.get('temperature_min_c', 18)
@@ -411,12 +421,21 @@ class IrrigationEngine:
         else:
             sm_status = 'saturated'
 
-        # Crop condition
-        if ndvi >= 0.5 and 25 <= soil_moisture <= 70:
+        # Crop condition logic refined for early stage/bare soil
+        if ndvi >= 0.35 and soil_moisture >= 25:
             crop_cond = 'good'
-        elif ndvi < 0.3 or soil_moisture < 20:
+        elif ndvi < 0.1 and soil_moisture < 15:
+            # Both very low -> really critical
             crop_cond = 'critical'
+        elif ndvi < 0.25 or soil_moisture < 20:
+            # One index is low -> needs attention
+            crop_cond = 'needs_attention'
         else:
+            # Middling values
+            crop_cond = 'needs_attention'
+        
+        # Special case: if NDVI is healthy (>0.4), condition shouldn't be critical even if dryish
+        if ndvi >= 0.4 and crop_cond == 'critical':
             crop_cond = 'needs_attention'
 
         # Yield risk
@@ -454,7 +473,7 @@ class IrrigationEngine:
             f"ET0={et0}mm, ETc={etc}mm. "
         )
         if soil_moisture < 30:
-            admin_insight += f"Soil moisture critically low at {soil_moisture}%. "
+            admin_insight += f"Soil moisture critically low at {soil_moisture:.1f}%. "
         if ndvi < 0.3:
             admin_insight += f"NDVI severely depressed at {ndvi}. "
         if len(alerts) > 0:
@@ -478,6 +497,11 @@ class IrrigationEngine:
                 'compared_to_yesterday_percent': compared,
                 'best_irrigation_time': best_time,
                 'irrigation_duration_hours': duration,
+                'savings': {
+                    'mm': max(0, self.TRADITIONAL_NORMS.get(crop_type, 40) - gross_rounded),
+                    'liters_total': max(0, (self.TRADITIONAL_NORMS.get(crop_type, 40) - gross_rounded) * 10000 * area_ha),
+                    'uzs_total': max(0, (self.TRADITIONAL_NORMS.get(crop_type, 40) - gross_rounded) * 10000 * area_ha / 1000 * 55) # ~55 UZS per m3 pump cost
+                }
             },
 
             'field_health': {

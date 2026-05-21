@@ -168,13 +168,18 @@ class DashboardDataView(APIView):
     """
 
     def get(self, request):
-        fields = Field.objects.filter(is_active=True)
+        # Prefetch the latest recommendation for each field to avoid N+1 queries
+        fields = Field.objects.filter(is_active=True).prefetch_related('recommendations', 'soil_sensors', 'alerts')
         data = []
 
         for field in fields:
-            latest_rec = field.recommendations.first()
-            latest_sensor = field.soil_sensors.first()
-            latest_weather = field.weather_records.first()
+            # Manually get the first (latest) items from prefetched sets
+            recs = list(field.recommendations.all()[:1])
+            latest_rec = recs[0] if recs else None
+            
+            sensors = list(field.soil_sensors.all()[:1])
+            latest_sensor = sensors[0] if sensors else None
+            
             recent_alerts = list(
                 field.alerts.filter(acknowledged=False)
                 .values('alert_type', 'severity', 'message', 'created_at')[:5]

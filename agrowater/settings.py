@@ -79,14 +79,17 @@ WSGI_APPLICATION = 'agrowater.wsgi.application'
 # ─── Database ───────────────────────────────────────────────────────
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-        'OPTIONS': {
-            'timeout': 30,
-        }
-    }
+    'default': dj_database_url.config(
+        default=f'sqlite:///{BASE_DIR / "db.sqlite3"}',
+        conn_max_age=600,
+    )
 }
+
+# SQLite uchun maxsus sozlamalar (Lock oldini olish uchun)
+if DATABASES['default']['ENGINE'] == 'django.db.backends.sqlite3':
+    DATABASES['default']['OPTIONS'] = {
+        'timeout': 30,
+    }
 
 # ─── Password validation ───────────────────────────────────────────
 

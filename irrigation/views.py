@@ -450,66 +450,68 @@ class RefreshFieldAnalysisView(APIView):
         ndwi_val = gee_data['indices']['ndwi']
         gee_source = gee_data['source']
 
-        from django.utils import timezone
-        field.satellite_ndvi = ndvi_val
-        field.satellite_ndwi = ndwi_val
-        field.satellite_data_date = date.today()
-        field.gee_source = gee_source
-        field.gee_last_updated = timezone.now()
-        field.save(update_fields=[
-            'satellite_ndvi', 'satellite_ndwi',
-            'satellite_data_date', 'gee_source', 'gee_last_updated',
-        ])
+        from django.db import transaction
+        with transaction.atomic():
+            from django.utils import timezone
+            field.satellite_ndvi = ndvi_val
+            field.satellite_ndwi = ndwi_val
+            field.satellite_data_date = date.today()
+            field.gee_source = gee_source
+            field.gee_last_updated = timezone.now()
+            field.save(update_fields=[
+                'satellite_ndvi', 'satellite_ndwi',
+                'satellite_data_date', 'gee_source', 'gee_last_updated',
+            ])
 
-        latest_sensor = field.soil_sensors.first()
-        # NDWI (-0.3 dan 0.2 gacha) ni 0-100% gacha o'tkazamiz
-        moisture = max(5.0, min(100.0, (ndwi_val + 0.3) * 200))
-        if latest_sensor:
-            latest_sensor.moisture_percent = moisture
-            latest_sensor.save()
-        else:
-            SoilSensor.objects.create(
-                field=field,
-                moisture_percent=moisture,
-                temperature=weather_dict['temperature_max_c'],
-            )
+            latest_sensor = field.soil_sensors.first()
+            # NDWI (-0.3 dan 0.2 gacha) ni 0-100% gacha o'tkazamiz
+            moisture = max(5.0, min(100.0, (ndwi_val + 0.3) * 200))
+            if latest_sensor:
+                latest_sensor.moisture_percent = moisture
+                latest_sensor.save()
+            else:
+                SoilSensor.objects.create(
+                    field=field,
+                    moisture_percent=moisture,
+                    temperature=weather_dict['temperature_max_c'],
+                )
 
-        # 3. Engine payload
-        payload = {
-            'field_id': field.field_id,
-            'field_name': field.name,
-            'area_hectares': field.area_hectares,
-            'crop_type': field.crop_type,
-            'crop_growth_stage': field.crop_growth_stage,
-            'satellite_ndvi': ndvi_val,
-            'satellite_ndwi': ndwi_val,
-            'satellite_evi': 0.4,
-            'soil_moisture_percent': moisture,
-            'soil_type': field.soil_type,
-            'weather_today': weather_dict,
-            'historical_avg_water_mm': field.historical_avg_water_mm,
-            'region': field.region,
-            'season': season,
-            'irrigation_system': field.irrigation_system,
-            'water_source_pressure': field.water_source_pressure,
-        }
-
-        engine = IrrigationEngine()
-        recommendation = engine.generate_recommendation(payload)
-        recommendation['gee_source'] = gee_source
-        recommendation['satellite_image_date'] = gee_data.get('image_date', date.today().isoformat())
-
-        IrrigationRecommendation.objects.update_or_create(
-            field=field,
-            date=date.today(),
-            defaults={
-                'recommendation_level': recommendation['recommendation_level'],
-                'amount_mm': recommendation['water_recommendation']['amount_mm'],
-                'irrigate_today': recommendation['water_recommendation']['irrigate_today'],
-                'heatmap_value': recommendation['heatmap_value'],
-                'recommendation_json': recommendation,
+            # 3. Engine payload
+            payload = {
+                'field_id': field.field_id,
+                'field_name': field.name,
+                'area_hectares': field.area_hectares,
+                'crop_type': field.crop_type,
+                'crop_growth_stage': field.crop_growth_stage,
+                'satellite_ndvi': ndvi_val,
+                'satellite_ndwi': ndwi_val,
+                'satellite_evi': 0.4,
+                'soil_moisture_percent': moisture,
+                'soil_type': field.soil_type,
+                'weather_today': weather_dict,
+                'historical_avg_water_mm': field.historical_avg_water_mm,
+                'region': field.region,
+                'season': season,
+                'irrigation_system': field.irrigation_system,
+                'water_source_pressure': field.water_source_pressure,
             }
-        )
+
+            engine = IrrigationEngine()
+            recommendation = engine.generate_recommendation(payload)
+            recommendation['gee_source'] = gee_source
+            recommendation['satellite_image_date'] = gee_data.get('image_date', date.today().isoformat())
+
+            IrrigationRecommendation.objects.update_or_create(
+                field=field,
+                date=date.today(),
+                defaults={
+                    'recommendation_level': recommendation['recommendation_level'],
+                    'amount_mm': recommendation['water_recommendation']['amount_mm'],
+                    'irrigate_today': recommendation['water_recommendation']['irrigate_today'],
+                    'heatmap_value': recommendation['heatmap_value'],
+                    'recommendation_json': recommendation,
+                }
+            )
 
         return Response(recommendation, status=status.HTTP_200_OK)
 

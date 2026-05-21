@@ -17,24 +17,37 @@ _GEE_INITIALIZED = False
 _GEE_AVAILABLE = False
 
 def _init_gee():
-    """GEE ni bir marta ishga tushiradi."""
+    """GEE ni bir marta ishga tushiradi (Service Account orqali)."""
     global _GEE_INITIALIZED, _GEE_AVAILABLE
     if _GEE_INITIALIZED:
         return _GEE_AVAILABLE
 
     try:
         import ee
+        import json
         project_id = os.environ.get('GEE_PROJECT')
+        service_account_json = os.environ.get('GEE_SERVICE_ACCOUNT_JSON')
 
-        # Simply initialize (ee.Initialize handles checks)
-        ee.Initialize(project=project_id)
+        if service_account_json:
+            # Service Account orqali ulanish (Railway/Server uchun)
+            try:
+                # JSON stringni dict ga o'tkazamiz
+                info = json.loads(service_account_json)
+                credentials = ee.ServiceAccountCredentials(info.get('client_email'), key_data=service_account_json)
+                ee.Initialize(credentials, project=project_id)
+                logger.info(f"GEE: Initialized with Service Account: {info.get('client_email')}")
+            except Exception as auth_err:
+                logger.error(f"GEE: Service Account Auth Error: {auth_err}")
+                # Fallback to default (local check)
+                ee.Initialize(project=project_id)
+        else:
+            # Lokal Authorization (Dastlabki login talab qiladi)
+            ee.Initialize(project=project_id)
 
         _GEE_AVAILABLE = True
-        logger.info(f"GEE: Successfully initialized with project {project_id}")
     except Exception as e:
         logger.error(f"GEE: Failed to initialize: {e}")
         _GEE_AVAILABLE = False
-
     
     _GEE_INITIALIZED = True
     return _GEE_AVAILABLE

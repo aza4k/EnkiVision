@@ -514,6 +514,27 @@ class IrrigationEngine:
                 'estimated_yield_risk': yield_risk,
             },
 
+            # ── AI Decision Engine & Warning Engine Features ──
+            'problems': [
+                {
+                    'type': 'Sho‘rlanish' if (1.8 + (1.0 - ndvi) * 2.5) > 3.0 else 'Suv stressi / Namlik yetishmasligi',
+                    'confidence': min(96, int((30.0 - soil_moisture) * 4) + 65) if soil_moisture < 25 else 85,
+                    'affected_area': f"{round(area_ha * 0.6, 1)} ha",
+                    'severity': 'High' if (soil_moisture < 18 or (1.8 + (1.0 - ndvi) * 2.5) > 3.8) else ('Medium' if soil_moisture < 28 else 'Low'),
+                    'yield_impact': f"-{min(30, int((25.0 - soil_moisture) * 2) + 6)}%" if soil_moisture < 25 else "-5%",
+                    'cause': f"Tuproq namligi ({soil_moisture:.1f}%) past va bug'lanish yuqori.",
+                    'recommendation': f"Zudlik bilan kechki payt {gross_rounded or 35} mm miqdorida sug'oring."
+                }
+            ] if (soil_moisture < 28 or (1.8 + (1.0 - ndvi) * 2.5) > 3.0) else [],
+            'warnings': [
+                f"⚠️ {field_name} da namlik yetishmasligi boshlanish ehtimoli — {min(96, int((30.0 - soil_moisture) * 4) + 65)}%.\n❗️ Muammo davom etsa hosilga taxminiy ta’sir: -{min(30, int((25.0 - soil_moisture) * 2) + 6)}%."
+            ] if soil_moisture < 25 else [],
+            'sensor_data': {
+                'soil_moisture': round(soil_moisture, 1),
+                'soil_temperature': round(temp_max - 5, 1),
+                'ec_salinity': round(1.8 + (1.0 - ndvi) * 2.5, 2)
+            },
+
             'alerts': alerts,
 
             'farmer_sms_message': {

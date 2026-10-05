@@ -414,14 +414,40 @@ def get_layer_tile_urls() -> dict:
 
     ndvi = collection.normalizedDifference(['B8', 'B4'])
     ndwi = collection.normalizedDifference(['B3', 'B8'])
+    ndsi = collection.normalizedDifference(['B11', 'B8'])
+    
+    # EVI: 2.5 * ((B8 - B4) / (B8 + 6*B4 - 7.5*B2 + 10000))
+    evi = collection.expression(
+        '2.5 * ((b("B8") - b("B4")) / (b("B8") + 6.0 * b("B4") - 7.5 * b("B2") + 10000.0))'
+    )
+    # SAVI: 1.5 * (B8 - B4) / (B8 + B4 + 5000)
+    savi = collection.expression(
+        '1.5 * (b("B8") - b("B4")) / (b("B8") + b("B4") + 5000.0)'
+    )
 
     ndvi_vis = {'min': 0, 'max': 0.8, 'palette': ['white', '#e6f598', '#abdda4', '#66c2a5', '#3288bd', '#5e4fa2', '#006837', '#004000']}
     ndwi_vis = {'min': -0.3, 'max': 0.3, 'palette': ['#d73027', '#f46d43', '#fdae61', '#fee08b', 'white', '#74add1', '#4575b4', '#313695']}
+    ndsi_vis = {'min': -0.3, 'max': 0.5, 'palette': ['#ffffd4', '#fee391', '#fec44f', '#fe9929', '#ec7014', '#cc4c02', '#8c2d04']}
+    evi_vis  = {'min': 0, 'max': 0.7, 'palette': ['#f7fcb9', '#addd8e', '#31a354', '#006837']}
+    savi_vis = {'min': 0, 'max': 0.7, 'palette': ['#ffffe5', '#d9f0a3', '#78c679', '#238443', '#004529']}
+    rededge_vis = {'bands': ['B7', 'B6', 'B5'], 'min': 500, 'max': 3500}
+    swir_vis = {'bands': ['B12', 'B8A', 'B4'], 'min': 500, 'max': 3500}
 
     ndvi_mapid = ndvi.getMapId(ndvi_vis)
     ndwi_mapid = ndwi.getMapId(ndwi_vis)
+    ndsi_mapid = ndsi.getMapId(ndsi_vis)
+    evi_mapid  = evi.getMapId(evi_vis)
+    savi_mapid = savi.getMapId(savi_vis)
+    rededge_mapid = collection.getMapId(rededge_vis)
+    swir_mapid = collection.getMapId(swir_vis)
 
     return {
         'ndvi': ndvi_mapid['tile_fetcher'].url_format,
         'ndwi': ndwi_mapid['tile_fetcher'].url_format,
+        'ndsi': ndsi_mapid['tile_fetcher'].url_format,
+        'evi': evi_mapid['tile_fetcher'].url_format,
+        'savi': savi_mapid['tile_fetcher'].url_format,
+        'rededge': rededge_mapid['tile_fetcher'].url_format,
+        'swir': swir_mapid['tile_fetcher'].url_format,
     }
+

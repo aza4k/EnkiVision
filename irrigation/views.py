@@ -560,7 +560,7 @@ class DeleteFieldView(APIView):
 class DetectCropTypeView(APIView):
     """
     POST /api/fields/<field_id>/detect-crop/
-    Gemini AI orqali ekin turini aniqlash.
+    Sentinel-2 MSI spektral tahlili orqali ekin turini avtomatik aniqlash.
     """
     def post(self, request, field_id):
         try:
@@ -568,29 +568,100 @@ class DetectCropTypeView(APIView):
         except Field.DoesNotExist:
             return Response({'error': 'Field not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        gee_data = get_full_spectral_analysis(field.polygon_coords, field.latitude, field.longitude)
-        if not gee_data or not gee_data.get('bands'):
-            return Response({'error': 'Spectral data not available from GEE'}, status=status.HTTP_400_BAD_REQUEST)
+        lang = request.data.get('lang', 'ru') if hasattr(request, 'data') and request.data else 'ru'
 
-        detected_crop = detect_crop_type(gee_data, region_context=f"{field.region}, Uzbekistan")
+        gee_data = get_full_spectral_analysis(field.polygon_coords, field.latitude, field.longitude)
         
-        if detected_crop:
-            old_crop = field.crop_type
-            field.crop_type = detected_crop
-            field.save(update_fields=['crop_type'])
-            
-            # Thumbnail URL ni vizualizatsiya uchun baribir qaytaramiz (agar kerak bo'lsa)
-            thumb_url = get_field_thumbnail_url(field.polygon_coords, field.latitude, field.longitude)
-            
-            return Response({
-                'detected_crop': detected_crop,
-                'old_crop': old_crop,
-                'status': 'updated',
-                'thumbnail_url': thumb_url,
-                'spectral_summary': spectral_profile.get('indices', {})
-            })
+        from gee.ai_recognition import classify_crop_sentinel
+        crop_result = classify_crop_sentinel(
+            spectral_data=gee_data or {},
+            region=field.region,
+            month=date.today().month
+        )
+
+        detected_crop = crop_result['crop_type']
+        old_crop = field.crop_type
         
-        return Response({'error': 'AI could not detect crop type from spectral data'}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        # Yangilaymiz
+        field.crop_type = detected_crop
+        if gee_data and 'indices' in gee_data:
+            if gee_data['indices'].get('ndvi') is not None:
+                field.satellite_ndvi = gee_data['indices']['ndvi']
+            if gee_data['indices'].get('ndwi') is not None:
+                field.satellite_ndwi = gee_data['indices']['ndwi']
+            if gee_data.get('source'):
+                field.gee_source = gee_data['source']
+        field.save(update_fields=['crop_type', 'satellite_ndvi', 'satellite_ndwi', 'gee_source'])
+
+        # Eng so'nggi sensor va ob-havo asosida tavsiyani yangilash
+        latest_sensor = field.soil_sensors.first()
+        latest_weather = field.weather_records.first()
+        soil_m = latest_sensor.moisture_percent if latest_sensor else 25.0
+
+        weather_dict = {
+            'temperature_max_c': getattr(latest_weather, 'temperature_max_c', 32.0) if latest_weather else 32.0,
+            'temperature_min_c': getattr(latest_weather, 'temperature_min_c', 18.0) if latest_weather else 18.0,
+            'humidity_percent': getattr(latest_weather, 'humidity_percent', 40.0) if latest_weather else 40.0,
+            'wind_speed_kmh': getattr(latest_weather, 'wind_speed_kmh', 12.0) if latest_weather else 12.0,
+            'solar_radiation_mj': 22.0,
+            'rainfall_mm': getattr(latest_weather, 'rainfall_mm', 0.0) if latest_weather else 0.0,
+            'forecast_rain_3days_mm': getattr(latest_weather, 'forecast_rain_3days_mm', 0.0) if latest_weather else 0.0,
+        }
+        engine_payload = {
+            'field_id': field.field_id,
+            'field_name': field.name,
+            'area_hectares': field.area_hectares,
+            'crop_type': detected_crop,
+            'crop_growth_stage': field.crop_growth_stage or 'vegetative',
+            'satellite_ndvi': field.satellite_ndvi,
+            'satellite_ndwi': field.satellite_ndwi,
+            'satellite_evi': 0.4,
+            'soil_moisture_percent': soil_m,
+            'soil_type': field.soil_type or 'loamy',
+            'weather_today': weather_dict,
+            'historical_avg_water_mm': field.historical_avg_water_mm or 25.0,
+            'region': field.region,
+            'season': 'summer',
+            'irrigation_system': field.irrigation_system,
+            'water_source_pressure': field.water_source_pressure,
+        }
+
+        from irrigation.engine import IrrigationEngine
+        engine = IrrigationEngine()
+        recommendation = engine.generate_recommendation(engine_payload)
+        wr = recommendation.get('water_recommendation', {})
+        savings = wr.get('savings', {})
+
+        IrrigationRecommendation.objects.update_or_create(
+            field=field,
+            date=date.today(),
+            defaults={
+                'recommendation_level': recommendation['recommendation_level'],
+                'amount_mm': wr.get('amount_mm', 0),
+                'irrigate_today': wr.get('irrigate_today', False),
+                'heatmap_value': recommendation.get('heatmap_value', 0.5),
+                'recommendation_json': recommendation,
+            }
+        )
+
+        return Response({
+            'success': True,
+            'field_id': field.field_id,
+            'old_crop': old_crop,
+            'crop_type': detected_crop,
+            'crop_name': crop_result['names'].get(lang, crop_result['names']['ru']),
+            'confidence': crop_result['confidence'],
+            'spectral_metrics': crop_result['spectral_metrics'],
+            'summary': crop_result['summaries'].get(lang, crop_result['summaries']['ru']),
+            'irrigation_norm_mm': wr.get('amount_mm', 0),
+            'irrigation_recommended': wr.get('irrigate_today', False),
+            'water_needed_liters': wr.get('total_liters_field', 0),
+            'water_savings_liters': savings.get('liters_total', 0),
+            'savings_uzs': savings.get('uzs_total', 0),
+            'optimal_time_window': wr.get('best_irrigation_time', '--:--'),
+            'duration_hours': wr.get('irrigation_duration_hours', 0)
+        })
+
 
 
 class FieldAIAnalysisView(APIView):
@@ -606,6 +677,7 @@ class FieldAIAnalysisView(APIView):
 
         latest_sensor = field.soil_sensors.first()
         latest_weather = field.weather_records.first()
+        lang = request.data.get('lang', 'ru') if hasattr(request, 'data') and request.data else 'ru'
 
         data_for_ai = {
             'crop_type': field.crop_type,
@@ -616,7 +688,7 @@ class FieldAIAnalysisView(APIView):
             'weather_humidity': latest_weather.humidity_percent if latest_weather else 40.0,
         }
 
-        report = generate_field_report(data_for_ai, region=field.region)
+        report = generate_field_report(data_for_ai, region=field.region, lang=lang)
         
         return Response({
             'report_markdown': report,
